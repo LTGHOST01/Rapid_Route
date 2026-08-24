@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DISPATCHER
+}
+
+enum VehicleType {
+  AMBULANCE
+  FIRE
+  POLICE
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  ASSIGNED
+  INACTIVE
+}
+
+enum EmergencyPriority {
+  CRITICAL
+  HIGH
+  STANDARD
+}
+
+enum EmergencyStatus {
+  OPEN
+  ASSIGNED
+  DISPATCHED
+  COMPLETED
+  CANCELLED
+}
+
+enum RoadStatus {
+  CLEAR
+  ADVISORY
+  CONGESTED
+  BLOCKED
+}
+
+enum RouteProvider {
+  GOOGLE
+  DEMO
+}
+
+enum ProviderStatus {
+  OK
+  FALLBACK
+  ERROR
+}
+
+enum TrafficLevel {
+  LOW
+  MEDIUM
+  HIGH
+  UNKNOWN
+}
+
+enum SelectedBy {
+  ENGINE
+  DISPATCHER
+}
+
+enum JourneyStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum RouteEventType {
+  DISPATCHED
+  POSITION
+  CONDITION_CHANGE
+  REROUTE_TRIGGERED
+  ROUTE_RECALCULATED
+  REROUTED
+  REROUTE_DECLINED
+  ARRIVED
+  PAUSED
+  RESUMED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  emergencies     Emergency[]     @relation("CreatedEmergencies")
+  roadConditions  RoadCondition[] @relation("ReportedConditions")
+}
+
+model EmergencyVehicle {
+  id                  String        @id @default(uuid())
+  callSign            String        @unique
+  type                VehicleType
+  latitude            Decimal       @db.Decimal(10, 7)
+  longitude           Decimal       @db.Decimal(10, 7)
+  locationLabel       String
+  status              VehicleStatus @default(AVAILABLE)
+  capabilities        Json
+  assignedEmergencyId String?       @unique
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  assignedEmergency Emergency? @relation("AssignedVehicle", fields: [assignedEmergencyId], references: [id])
+  journeys          Journey[]
+
+  @@index([status])
+  @@index([type, status])
+}
+
+model Emergency {
+  id                 String             @id @default(uuid())
+  code               String             @unique
+  priority           EmergencyPriority
+  status             EmergencyStatus    @default(OPEN)
+  originLabel        String
+  originLat          Decimal            @db.Decimal(10, 7)
+  originLng          Decimal            @db.Decimal(10, 7)
+  destinationLabel   String
+  destinationLat     Decimal            @db.Decimal(10, 7)
+  destinationLng     Decimal            @db.Decimal(10, 7)
+  notes              String             @default("")
+  createdById        String
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  createdBy    User            @relation("CreatedEmergencies", fields: [createdById], references: [id])
+  vehicle      EmergencyVehicle? @relation("AssignedVehicle")
+  routeRequests RouteRequest[]
+  journey      Journey?
+
+  @@index([status, createdAt])
+  @@index([priority, status])
+}
+
+model RoadCondition {
+  id           String     @id @default(uuid())
+  title        String
+  status       RoadStatus
+  geometry     Json
+  corridorId   String
+  simulated    Boolean    @default(true)
+  activeFrom   DateTime   @default(now())
+  activeUntil  DateTime?
+  reportedById String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  reportedBy User? @relation("ReportedConditions", fields: [reportedById], references: [id])
+
+  @@index([status, activeFrom])
+  @@index([corridorId])
+}
+
+model RouteRequest {
+  id              String         @id @default(uuid())
+  emergencyId     String
+  originLabel     String
+  originLat       Decimal        @db.Decimal(10, 7)
+  originLng       Decimal        @db.Decimal(10, 7)
+  destinationLabel String
+  destinationLat  Decimal        @db.Decimal(10, 7)
+  destinationLng  Decimal        @db.Decimal(10, 7)
+  provider        RouteProvider
+  providerStatus  ProviderStatus
+  providerMessage String?
+  requestedAt     DateTime       @default(now())
+
+  emergency  Emergency        @relation(fields: [emergencyId], references: [id])
+  candidates RouteCandidate[]
+  selection  RouteSelection?
+
+  @@index([emergencyId, requestedAt])
+}
+
+model RouteCandidate {
+  id                 String       @id @default(uuid())
+  requestId          String
+  providerRouteIndex Int
+  label              String
+  polyline           String
+  etaSeconds         Int
+  distanceMeters     Int
+  trafficLevel       TrafficLevel
+  roadImpact         RoadStatus
+  blocked            Boolean      @default(false)
+  score              Decimal?     @db.Decimal(6, 2)
+  corridorIds        Json
+  breakdown          Json?
+  createdAt          DateTime     @default(now())
+
+  request    RouteRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  selections RouteSelection[]
+
+  @@index([requestId])
+}
+
+model RouteSelection {
+  id          String     @id @default(uuid())
+  requestId   String     @unique
+  candidateId String
+  selectedBy  SelectedBy
+  reason      Json
+  version     Int        @default(1)
+  createdAt   DateTime   @default(now())
+
+  request   RouteRequest   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  candidate RouteCandidate @relation(fields: [candidateId], references: [id])
+  journeys  Journey[]
+}
+
+model Journey {
+  id                 String        @id @default(uuid())
+  emergencyId        String        @unique
+  vehicleId          String
+  selectionId        String
+  status             JourneyStatus @default(ACTIVE)
+  startedAt          DateTime      @default(now())
+  estimatedArrivalAt DateTime
+  lastLat            Decimal       @db.Decimal(10, 7)
+  lastLng            Decimal       @db.Decimal(10, 7)
+  progress           Decimal       @db.Decimal(6, 4)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  emergency Emergency      @relation(fields: [emergencyId], references: [id])
+  vehicle   EmergencyVehicle @relation(fields: [vehicleId], references: [id])
+  selection RouteSelection @relation(fields: [selectionId], references: [id])
+  events    RouteEvent[]
+
+  @@index([status])
+}
+
+model RouteEvent {
+  id         String         @id @default(uuid())
+  journeyId  String
+  type       RouteEventType
+  occurredAt DateTime       @default(now())
+  payload    Json
+
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@index([journeyId, occurredAt])
+}
