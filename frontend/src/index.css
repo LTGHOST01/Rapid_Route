@@ -1,17 +1,18 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Roboto", "Segoe UI", Tahoma, sans-serif;
 
-  --color-ink: #202124;
-  --color-muted: #5f6368;
-  --color-line: #e8eaed;
-  --color-soft: #f8f9fa;
-  --color-nav: #1a73e8;
-  --color-nav-dark: #1557b0;
-  --color-critical: #d93025;
-  --color-warning: #f9ab00;
-  --color-clear: #188038;
+  --color-ink: #1a1a1a;
+  --color-muted: #4b5563;
+  --color-line: #c5cdd6;
+  --color-soft: #e8edf2;
+  --color-nav: #1e4b8a;
+  --color-nav-dark: #16386a;
+  --color-critical: #b91c1c;
+  --color-warning: #c2410c;
+  --color-clear: #166534;
+  --color-header: #0f2744;
 }
 
 html,
@@ -39,6 +40,19 @@ textarea {
   font: inherit;
 }
 
+.pac-container {
+  z-index: 80;
+  font-family: Roboto, "Segoe UI", Tahoma, sans-serif;
+  border: 1px solid #c5cdd6;
+}
+
+.rr-unit-label {
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+
 ::selection {
   background: #d2e3fc;
 }
@@ -50,13 +64,13 @@ textarea {
 .rr-eta {
   transform: translate(-50%, -50%);
   min-width: 56px;
-  border-radius: 8px;
-  padding: 4px 8px;
+  border-radius: 2px;
+  padding: 3px 7px;
   text-align: center;
   line-height: 1.15;
   font-size: 12px;
-  font-weight: 600;
-  box-shadow: 0 1px 4px rgba(60, 64, 67, 0.18);
+  font-weight: 700;
+  border: 1px solid #16386a;
   pointer-events: none;
   white-space: nowrap;
 }
@@ -73,14 +87,14 @@ textarea {
 }
 
 .rr-eta.primary {
-  background: #1a73e8;
+  background: #1e4b8a;
   color: #fff;
 }
 
 .rr-eta.alt {
   background: #fff;
-  color: #3c4043;
-  border: 1px solid #dadce0;
+  color: #1a1a1a;
+  border: 1px solid #c5cdd6;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { APIProvider, Map, useMap } from "@vis.gl/react-google-maps";
+import { Map, useMap } from "@vis.gl/react-google-maps";
 import { Minus, Plus, LocateFixed, Layers } from "lucide-react";
 import { decodePolyline, type LatLng } from "../../lib/geo";
 import { midpoint, routeColor } from "../../lib/mapStyles";
+import { hospitalIconUrl, incidentIconUrl, vehicleIconUrl } from "../../lib/mapIcons";
 import type { Candidate, RoadCondition, Vehicle } from "../../types";
+import type { HospitalPlace } from "../../lib/geo";
 
 type Props = {
   vehicles: Vehicle[];
@@ -12,6 +14,9 @@ type Props = {
   candidates?: Candidate[];
   selectedId?: string | null;
   vehiclePosition?: LatLng | null;
+  movingVehicle?: { id: string; callSign: string; status: string; type?: string } | null;
+  pinMode?: "origin" | "destination" | null;
+  hospitals?: HospitalPlace[];
   roadConditions?: RoadCondition[];
   onMapClick?: (point: LatLng) => void;
 };
@@ -23,6 +28,8 @@ function Overlay({
   candidates = [],
   selectedId,
   vehiclePosition,
+  movingVehicle,
+  hospitals = [],
   roadConditions = [],
   onMapClick,
 }: Props) {
@@ -82,87 +89,152 @@ function Overlay({
       });
 
     const markers: google.maps.Marker[] = [];
-    vehicles.forEach((vehicle) => {
-      markers.push(
-        new google.maps.Marker({
+    const info = new google.maps.InfoWindow();
+    const movingId = movingVehicle?.id;
+
+    vehicles
+      .filter((vehicle) => vehicle.id !== movingId)
+      .forEach((vehicle) => {
+        const marker = new google.maps.Marker({
           map,
           position: { lat: vehicle.latitude, lng: vehicle.longitude },
-          title: vehicle.callSign,
+          title: `${vehicle.callSign} · ${vehicle.status}`,
           label: {
             text: vehicle.callSign,
+            className: "rr-unit-label",
             color: "#202124",
-            fontSize: "11px",
+            fontSize: "10px",
             fontWeight: "600",
-            fontFamily: "Inter",
           },
           icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 7,
-            fillColor: vehicle.status === "AVAILABLE" ? "#188038" : "#1A73E8",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
+            url: vehicleIconUrl(vehicle.type),
+            scaledSize: new google.maps.Size(40, 32),
+            anchor: new google.maps.Point(20, 28),
+            labelOrigin: new google.maps.Point(20, -4),
           },
-        }),
-      );
+          zIndex: 8,
+        });
+        marker.addListener("click", () => {
+          info.setContent(
+            `<div style="font:12px Inter,sans-serif;color:#202124;min-width:130px">
+              <div style="font-weight:600">${vehicle.callSign}</div>
+              <div style="color:#5f6368;margin-top:2px">${vehicle.type} · ${vehicle.status}</div>
+              <div style="color:#5f6368">${vehicle.locationLabel ?? ""}</div>
+            </div>`,
+          );
+          info.open({ map, anchor: marker });
+        });
+        markers.push(marker);
+      });
+
+    hospitals.forEach((hospital) => {
+      const isDestination =
+        destination &&
+        Math.abs(hospital.lat - destination.lat) < 0.0008 &&
+        Math.abs(hospital.lng - destination.lng) < 0.0008;
+      if (isDestination) return;
+      const marker = new google.maps.Marker({
+        map,
+        position: { lat: hospital.lat, lng: hospital.lng },
+        title: hospital.label,
+        icon: {
+          url: hospitalIconUrl("#d93025"),
+          scaledSize: new google.maps.Size(22, 28),
+          anchor: new google.maps.Point(11, 26),
+        },
+        opacity: 0.85,
+        zIndex: 6,
+      });
+      marker.addListener("click", () => {
+        info.setContent(
+          `<div style="font:12px Inter,sans-serif;color:#202124;min-width:140px">
+            <div style="font-weight:600">${hospital.label}</div>
+            <div style="color:#5f6368;margin-top:2px">${hospital.area}</div>
+            <div style="color:#5f6368">${hospital.facilityType}</div>
+          </div>`,
+        );
+        info.open({ map, anchor: marker });
+      });
+      markers.push(marker);
     });
 
     if (origin) {
-      markers.push(
-        new google.maps.Marker({
-          map,
-          position: origin,
-          title: origin.label ?? "Origin",
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 9,
-            fillColor: "#188038",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
-        }),
-      );
+      const marker = new google.maps.Marker({
+        map,
+        position: origin,
+        title: origin.label ?? "Incident",
+        icon: {
+          url: incidentIconUrl(),
+          scaledSize: new google.maps.Size(28, 36),
+          anchor: new google.maps.Point(14, 34),
+        },
+        zIndex: 9,
+      });
+      marker.addListener("click", () => {
+        info.setContent(
+          `<div style="font:12px Inter,sans-serif;color:#202124">
+            <div style="font-weight:600">Incident</div>
+            <div style="color:#5f6368;margin-top:2px">${origin.label ?? "Scene"}</div>
+          </div>`,
+        );
+        info.open({ map, anchor: marker });
+      });
+      markers.push(marker);
     }
     if (destination) {
-      markers.push(
-        new google.maps.Marker({
-          map,
-          position: destination,
-          title: destination.label ?? "Hospital",
-          label: { text: "H", color: "#fff", fontSize: "10px", fontWeight: "700" },
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 10,
-            fillColor: "#D93025",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 2,
-          },
-        }),
-      );
+      const marker = new google.maps.Marker({
+        map,
+        position: destination,
+        title: destination.label ?? "Hospital",
+        icon: {
+          url: hospitalIconUrl("#188038"),
+          scaledSize: new google.maps.Size(30, 38),
+          anchor: new google.maps.Point(15, 36),
+        },
+        zIndex: 10,
+      });
+      marker.addListener("click", () => {
+        info.setContent(
+          `<div style="font:12px Inter,sans-serif;color:#202124">
+            <div style="font-weight:600">Destination</div>
+            <div style="color:#5f6368;margin-top:2px">${destination.label ?? "Hospital"}</div>
+          </div>`,
+        );
+        info.open({ map, anchor: marker });
+      });
+      markers.push(marker);
     }
     if (vehiclePosition) {
       markers.push(
         new google.maps.Marker({
           map,
           position: vehiclePosition,
-          title: "Simulated vehicle position",
-          icon: {
-            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-            scale: 5,
-            fillColor: "#1A73E8",
-            fillOpacity: 1,
-            strokeColor: "#fff",
-            strokeWeight: 1,
+          title: `${movingVehicle?.callSign ?? "Unit"} · ${movingVehicle?.status ?? "en route"}`,
+          label: {
+            text: movingVehicle?.callSign ?? "UNIT",
+            className: "rr-unit-label",
+            color: "#202124",
+            fontSize: "10px",
+            fontWeight: "600",
           },
-          zIndex: 12,
+          icon: {
+            url: vehicleIconUrl(movingVehicle?.type ?? "AMBULANCE"),
+            scaledSize: new google.maps.Size(46, 38),
+            anchor: new google.maps.Point(23, 34),
+            labelOrigin: new google.maps.Point(23, -4),
+          },
+          zIndex: 14,
         }),
       );
     }
 
     overlays.current.forEach((o) => o.setMap(null));
     overlays.current = [];
+    if (vehiclePosition) {
+      overlays.current.push(
+        makeUnitLabel(vehiclePosition, movingVehicle?.callSign ?? "AMB", movingVehicle?.status ?? "EN ROUTE"),
+      );
+    }
     decoded.forEach(({ candidate, path }) => {
       const at = midpoint(path);
       if (!at) return;
@@ -173,19 +245,6 @@ function Overlay({
     });
     overlays.current.forEach((o) => o.setMap(map));
 
-    const fit: LatLng[] = [];
-    decoded.forEach((d) => fit.push(...d.path));
-    if (origin) fit.push(origin);
-    if (destination) fit.push(destination);
-    if (fit.length === 0) {
-      vehicles.forEach((v) => fit.push({ lat: v.latitude, lng: v.longitude }));
-    }
-    if (fit.length > 0) {
-      const bounds = new google.maps.LatLngBounds();
-      fit.forEach((p) => bounds.extend(p));
-      map.fitBounds(bounds, 80);
-    }
-
     return () => {
       polylines.forEach((line) => line.setMap(null));
       markers.forEach((marker) => marker.setMap(null));
@@ -193,9 +252,60 @@ function Overlay({
       overlays.current = [];
       listeners.forEach((listener) => listener.remove());
     };
-  }, [map, decoded, vehicles, origin, destination, selectedId, vehiclePosition, roadConditions, onMapClick]);
+  }, [map, decoded, vehicles, origin, destination, selectedId, vehiclePosition, movingVehicle, hospitals, roadConditions, onMapClick]);
+
+  const fitKey = useMemo(
+    () =>
+      JSON.stringify({
+        o: origin,
+        d: destination,
+        ids: decoded.map((row) => row.candidate.id),
+      }),
+    [origin, destination, decoded],
+  );
+
+  useEffect(() => {
+    if (!map) return;
+    const fit: LatLng[] = [];
+    decoded.forEach((d) => fit.push(...d.path));
+    if (origin) fit.push(origin);
+    if (destination) fit.push(destination);
+    if (fit.length === 0) {
+      vehicles.forEach((v) => fit.push({ lat: v.latitude, lng: v.longitude }));
+      hospitals.forEach((h) => fit.push({ lat: h.lat, lng: h.lng }));
+    }
+    if (fit.length === 0) return;
+    const bounds = new google.maps.LatLngBounds();
+    fit.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, 80);
+  }, [map, fitKey, decoded, origin, destination, vehicles, hospitals]);
 
   return null;
+}
+
+function makeUnitLabel(position: LatLng, callSign: string, status: string) {
+  const div = document.createElement("div");
+  div.style.cssText =
+    "transform:translate(-50%,8px);background:#fff;border:1px solid #dadce0;border-radius:8px;padding:3px 6px;font:11px/1.2 Inter,sans-serif;color:#202124;box-shadow:0 1px 3px rgba(60,64,67,.18);text-align:center;white-space:nowrap;pointer-events:none;position:absolute";
+  div.innerHTML = `<strong>${callSign}</strong><div style="color:#5f6368;font-size:10px">${status}</div>`;
+
+  class Label extends google.maps.OverlayView {
+    onAdd() {
+      this.getPanes()?.overlayMouseTarget.appendChild(div);
+    }
+    draw() {
+      const projection = this.getProjection();
+      if (!projection) return;
+      const point = projection.fromLatLngToDivPixel(new google.maps.LatLng(position.lat, position.lng));
+      if (!point) return;
+      div.style.left = `${point.x}px`;
+      div.style.top = `${point.y + 18}px`;
+    }
+    onRemove() {
+      div.remove();
+    }
+  }
+  return new Label();
 }
 
 function makeEtaOverlay(
@@ -293,29 +403,36 @@ function TrafficLayerOn({ enabled }: { enabled: boolean }) {
 }
 
 export function GoogleDispatchMap(props: Props) {
-  const key = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY as string;
   const center = props.origin ?? { lat: 19.076, lng: 72.8777 };
   const [traffic, setTraffic] = useState(false);
 
   return (
-    <APIProvider apiKey={key}>
-      <div className="relative h-full w-full">
-        <Map
-          defaultCenter={center}
-          defaultZoom={12}
-          disableDefaultUI
-          clickableIcons={false}
-          gestureHandling="greedy"
-          mapTypeControl={false}
-          fullscreenControl={false}
-          streetViewControl={false}
-          className="h-full w-full"
-        >
-          <Overlay {...props} />
-          <TrafficLayerOn enabled={traffic} />
-          <MapHud showTraffic={traffic} onToggleTraffic={() => setTraffic((v) => !v)} />
-        </Map>
+    <div className="relative h-full w-full">
+      <Map
+        defaultCenter={center}
+        defaultZoom={12}
+        disableDefaultUI
+        clickableIcons={false}
+        gestureHandling="greedy"
+        mapTypeControl={false}
+        fullscreenControl={false}
+        streetViewControl={false}
+        className="h-full w-full"
+      >
+        <Overlay {...props} />
+        <TrafficLayerOn enabled={traffic} />
+        <MapHud showTraffic={traffic} onToggleTraffic={() => setTraffic((v) => !v)} />
+      </Map>
+      {props.pinMode && (
+        <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-[12px] text-white shadow">
+          {props.pinMode === "origin" ? "Click the map to set the incident" : "Click the map to set the hospital"}
+        </div>
+      )}
+      <div className="pointer-events-none absolute bottom-6 left-3 z-20 flex flex-wrap gap-2 rounded-lg border border-line bg-white/95 px-2.5 py-1.5 text-[11px] text-muted shadow-sm">
+        <span className="flex items-center gap-1"><img src={vehicleIconUrl("AMBULANCE")} alt="" className="h-4" /> Unit</span>
+        <span className="flex items-center gap-1"><img src={incidentIconUrl()} alt="" className="h-4" /> Incident</span>
+        <span className="flex items-center gap-1"><img src={hospitalIconUrl()} alt="" className="h-4" /> Hospital</span>
       </div>
-    </APIProvider>
+    </div>
   );
 }

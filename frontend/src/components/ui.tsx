@@ -12,7 +12,7 @@ export function StatusChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-medium",
         tone === "critical" && "bg-red-50 text-critical",
         tone === "warning" && "bg-amber-50 text-amber-700",
         tone === "clear" && "bg-emerald-50 text-clear",
@@ -60,7 +60,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2.5 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        "inline-flex items-center justify-center gap-2 rounded-sm px-3 py-2 text-[13px] font-medium disabled:cursor-not-allowed disabled:opacity-40",
         variant === "primary" && "bg-nav text-white hover:bg-nav-dark",
         variant === "ghost" && "border border-line bg-white text-ink hover:bg-soft",
         variant === "danger" && "bg-critical text-white hover:bg-red-700",
@@ -90,7 +90,7 @@ export function Field({
 }
 
 export function inputClass() {
-  return "w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] text-ink outline-none placeholder:text-slate-400 focus:border-nav";
+  return "w-full rounded-sm border border-line bg-white px-2.5 py-1.5 text-[13px] text-ink outline-none placeholder:text-slate-400 focus:border-nav";
 }
 
 export function Panel({

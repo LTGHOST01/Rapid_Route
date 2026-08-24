@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { boundsOf, decodePolyline, type LatLng } from "../../lib/geo";
 import { midpoint, routeColor } from "../../lib/mapStyles";
 import type { Candidate, RoadCondition, Vehicle } from "../../types";
+import type { HospitalPlace } from "../../lib/geo";
 
 type Props = {
   vehicles: Vehicle[];
@@ -10,6 +11,8 @@ type Props = {
   candidates?: Candidate[];
   selectedId?: string | null;
   vehiclePosition?: LatLng | null;
+  movingVehicle?: { id: string; callSign: string; status: string; type?: string } | null;
+  hospitals?: HospitalPlace[];
   roadConditions?: RoadCondition[];
   onMapClick?: (point: LatLng) => void;
 };
@@ -35,6 +38,7 @@ export function FallbackMap({
   candidates = [],
   selectedId,
   vehiclePosition,
+  hospitals = [],
   roadConditions = [],
   onMapClick,
 }: Props) {
@@ -45,8 +49,9 @@ export function FallbackMap({
     if (destination) pts.push(destination);
     if (vehiclePosition) pts.push(vehiclePosition);
     candidates.forEach((c) => pts.push(...decodePolyline(c.polyline)));
+    hospitals.forEach((h) => pts.push({ lat: h.lat, lng: h.lng }));
     return pts;
-  }, [vehicles, origin, destination, candidates, vehiclePosition]);
+  }, [vehicles, origin, destination, candidates, vehiclePosition, hospitals]);
 
   const bounds = useMemo(() => boundsOf(allPoints), [allPoints]);
   const width = 1000;
@@ -134,12 +139,21 @@ export function FallbackMap({
             );
           })}
 
+        {hospitals.map((hospital) => {
+          const p = project({ lat: hospital.lat, lng: hospital.lng }, bounds, width, height);
+          return (
+            <g key={hospital.id}>
+              <image href="/markers/hospital.svg" x={p.x - 10} y={p.y - 24} width="20" height="26" />
+            </g>
+          );
+        })}
+
         {vehicles.map((vehicle) => {
           const p = project({ lat: vehicle.latitude, lng: vehicle.longitude }, bounds, width, height);
           return (
             <g key={vehicle.id}>
-              <circle cx={p.x} cy={p.y} r={6} fill="#188038" stroke="#fff" strokeWidth={2} />
-              <text x={p.x + 9} y={p.y + 4} fill="#202124" fontSize={11} fontFamily="Inter">
+              <image href="/markers/ambulance.svg" x={p.x - 16} y={p.y - 22} width="32" height="26" />
+              <text x={p.x} y={p.y + 16} textAnchor="middle" fill="#202124" fontSize={11} fontFamily="Inter">
                 {vehicle.callSign}
               </text>
             </g>
@@ -147,37 +161,30 @@ export function FallbackMap({
         })}
 
         {origin && (
-          <g>
-            <circle
-              cx={project(origin, bounds, width, height).x}
-              cy={project(origin, bounds, width, height).y}
-              r={8}
-              fill="#188038"
-              stroke="#fff"
-              strokeWidth={2}
-            />
-          </g>
+          <image
+            href="/markers/incident.svg"
+            x={project(origin, bounds, width, height).x - 11}
+            y={project(origin, bounds, width, height).y - 26}
+            width="22"
+            height="28"
+          />
         )}
         {destination && (
-          <g>
-            <circle
-              cx={project(destination, bounds, width, height).x}
-              cy={project(destination, bounds, width, height).y}
-              r={9}
-              fill="#D93025"
-              stroke="#fff"
-              strokeWidth={2}
-            />
-          </g>
+          <image
+            href="/markers/hospital.svg"
+            x={project(destination, bounds, width, height).x - 12}
+            y={project(destination, bounds, width, height).y - 30}
+            width="24"
+            height="32"
+          />
         )}
         {vehiclePosition && (
-          <circle
-            cx={project(vehiclePosition, bounds, width, height).x}
-            cy={project(vehiclePosition, bounds, width, height).y}
-            r={7}
-            fill="#1A73E8"
-            stroke="#fff"
-            strokeWidth={2}
+          <image
+            href="/markers/ambulance.svg"
+            x={project(vehiclePosition, bounds, width, height).x - 18}
+            y={project(vehiclePosition, bounds, width, height).y - 26}
+            width="36"
+            height="30"
           />
         )}
       </svg>

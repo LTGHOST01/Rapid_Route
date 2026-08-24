@@ -4,18 +4,20 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, MapPin, Menu, Play, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import {
-  DEMO_CORRIDORS,
   MUMBAI_DEMO,
   MUMBAI_HOSPITALS,
   MUMBAI_ORIGINS,
+  type HospitalPlace,
   formatEtaClock,
   formatWhen,
   type LatLng,
 } from "../lib/geo";
-import { DEMO_PRESETS, roadLabel, trafficLabel } from "../lib/labels";
-import { displayScore, factorScore, incidentTitle, priorityShort, timeAgo } from "../lib/format";
+import { roadLabel, trafficLabel } from "../lib/labels";
+import { displayScore, factorScore, formatDuration, incidentTitle, priorityShort, timeAgo } from "../lib/format";
 import { Button, Field, inputClass, StatusChip, roadTone, trafficTone } from "../components/ui";
-import { DispatchMap } from "../components/map/DispatchMap";
+import { DispatchMap, MapsApiGate } from "../components/map/DispatchMap";
+import { PlaceSearch } from "../components/map/PlaceSearch";
+import { reverseGeocode } from "../lib/places";
 import type {
   Candidate,
   Emergency,
@@ -24,9 +26,7 @@ import type {
   JourneyDetail,
   Priority,
   RoadCondition,
-  RoadStatus,
   RouteRequest,
-  RerouteResult,
   Vehicle,
 } from "../types";
 import { cn } from "../lib/cn";
@@ -57,11 +57,10 @@ export function DispatchPage() {
   const [form, setForm] = useState(emptyForm);
   const [pinMode, setPinMode] = useState<"origin" | "destination" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [rerouteNotice, setRerouteNotice] = useState<RerouteResult | null>(null);
+  const [ackRerouteId, setAckRerouteId] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [whyOpen, setWhyOpen] = useState(true);
-  const [blockCorridor, setBlockCorridor] = useState(MUMBAI_DEMO.blockCorridorId);
+  const [whyOpen, setWhyOpen] = useState(false);
 
   const emergencies = useQuery({
     queryKey: ["emergencies"],
@@ -73,6 +72,15 @@ export function DispatchPage() {
     queryFn: () => api<{ vehicles: Vehicle[] }>("/vehicles"),
     refetchInterval: 8000,
   });
+  const catalog = useQuery({
+    queryKey: ["catalog"],
+    queryFn: () =>
+      api<{
+        hospitals: HospitalPlace[];
+        origins: Array<{ id: string; label: string; lat: number; lng: number }>;
+      }>("/catalog/locations"),
+  });
+
   const roads = useQuery({
     queryKey: ["roads"],
     queryFn: () => api<{ roadConditions: RoadCondition[] }>("/road-conditions?active=true"),
@@ -103,7 +111,7 @@ export function DispatchPage() {
       } catch {
         /* completed */
       }
-    }, 2000);
+    }, 4000);
     return () => clearInterval(timer);
   }, [journeyId, journey.data?.journey.status, qc]);
 
@@ -186,21 +194,6 @@ export function DispatchPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["emergency", selectedId] }),
   });
 
-  const demoScenario = useMutation({
-    mutationFn: (status: RoadStatus) =>
-      api<{ reroute: RerouteResult }>("/demo/road-scenario", {
-        method: "POST",
-        body: JSON.stringify({ status, corridorId: blockCorridor, journeyId }),
-      }),
-    onSuccess: (data) => {
-      setRerouteNotice(data.reroute);
-      qc.invalidateQueries({ queryKey: ["journey", journeyId] });
-      qc.invalidateQueries({ queryKey: ["roads"] });
-      qc.invalidateQueries({ queryKey: ["emergency", selectedId] });
-    },
-    onError: (err) => setError(err instanceof ApiError ? err.message : "Simulation failed"),
-  });
-
   const emergency = detail.data?.emergency;
   const routeRequest = journey.data?.routeRequest ?? detail.data?.latestRouteRequest ?? null;
   const selectedCandidateId = routeRequest?.selection?.candidateId ?? null;
@@ -233,7 +226,9 @@ export function DispatchPage() {
       ? { lat: emergency.vehicle.latitude, lng: emergency.vehicle.longitude }
       : null;
 
-  const queue = emergencies.data?.emergencies ?? [];
+  const queue = (emergencies.data?.emergencies ?? []).filter((item) =>
+    item.status === "OPEN" || item.status === "ASSIGNED" || item.status === "DISPATCHED",
+  );
 
   function startNew() {
     setCreating(true);
@@ -263,12 +258,13 @@ export function DispatchPage() {
 
   function onMapClick(point: LatLng) {
     if (!creating || !pinMode) return;
-    if (pinMode === "origin") {
+    const mode = pinMode;
+    if (mode === "origin") {
       setForm((f) => ({
         ...f,
         originLat: point.lat.toFixed(5),
         originLng: point.lng.toFixed(5),
-        originLabel: f.originLabel || "Map pin origin",
+        originLabel: f.originLabel || "Dropped pin",
       }));
       setPinMode("destination");
     } else {
@@ -276,15 +272,26 @@ export function DispatchPage() {
         ...f,
         destinationLat: point.lat.toFixed(5),
         destinationLng: point.lng.toFixed(5),
-        destinationLabel: f.destinationLabel || "Map pin destination",
+        destinationLabel: f.destinationLabel || "Dropped pin",
       }));
       setPinMode(null);
     }
+    void reverseGeocode(point).then((label) => {
+      setForm((f) =>
+        mode === "origin"
+          ? { ...f, originLabel: label, originLat: point.lat.toFixed(5), originLng: point.lng.toFixed(5) }
+          : { ...f, destinationLabel: label, destinationLat: point.lat.toFixed(5), destinationLng: point.lng.toFixed(5) },
+      );
+    });
   }
 
   const mapVehicles = useMemo(() => vehicles.data?.vehicles ?? [], [vehicles.data]);
 
+  const originOptions = catalog.data?.origins ?? MUMBAI_ORIGINS;
+  const hospitalOptions = catalog.data?.hospitals ?? MUMBAI_HOSPITALS;
+
   return (
+    <MapsApiGate>
     <div className="flex h-full bg-soft">
       <AnimatePresence initial={false}>
         {leftOpen && (
@@ -301,7 +308,7 @@ export function DispatchPage() {
               onSelect={(id) => {
                 setSelectedId(id);
                 setCreating(false);
-                setRerouteNotice(null);
+                setAckRerouteId(null);
                 setRightOpen(true);
               }}
               onNew={startNew}
@@ -318,8 +325,20 @@ export function DispatchPage() {
           candidates={routeRequest?.candidates}
           selectedId={selectedCandidateId}
           vehiclePosition={vehiclePosition}
+          movingVehicle={
+            journey.data
+              ? {
+                  id: journey.data.vehicle.id,
+                  callSign: journey.data.vehicle.callSign,
+                  status: journey.data.journey.status === "ACTIVE" ? "EN ROUTE" : journey.data.journey.status,
+                  type: journey.data.vehicle.type,
+                }
+              : null
+          }
+          hospitals={hospitalOptions}
           roadConditions={roads.data?.roadConditions}
           onMapClick={onMapClick}
+          pinMode={creating ? pinMode : null}
         />
 
         <button
@@ -347,7 +366,8 @@ export function DispatchPage() {
         )}
 
         <AnimatePresence>
-          {rerouteNotice && (
+          {journey.data?.events.find((event) => event.type === "REROUTED") &&
+            ackRerouteId !== journey.data.events.find((event) => event.type === "REROUTED")?.id && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
@@ -357,19 +377,13 @@ export function DispatchPage() {
             >
               <div className="text-[12px] font-semibold text-amber-700">Route updated</div>
               <p className="mt-1 text-[13px] text-ink">
-                {rerouteNotice.adopted
-                  ? "Road blockage detected. RapidRoute selected an alternate route."
-                  : rerouteNotice.reason}
+                Road blockage detected. RapidRoute selected an alternate route.
               </p>
-              {rerouteNotice.adopted && (
-                <p className="mt-1 text-[12px] text-muted">
-                  ETA {Math.round((rerouteNotice.previousEtaSeconds ?? 0) / 60)} min →{" "}
-                  {Math.round((rerouteNotice.newEtaSeconds ?? 0) / 60)} min
-                </p>
-              )}
               <button
                 className="mt-2 text-[12px] font-medium text-nav"
-                onClick={() => setRerouteNotice(null)}
+                onClick={() =>
+                  setAckRerouteId(journey.data?.events.find((event) => event.type === "REROUTED")?.id ?? null)
+                }
               >
                 Acknowledge
               </button>
@@ -394,7 +408,7 @@ export function DispatchPage() {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: 24, opacity: 0 }}
             transition={{ duration: 0.22 }}
-            className="absolute inset-x-0 bottom-0 z-20 max-h-[58%] overflow-y-auto rounded-t-2xl border-t border-line bg-white shadow-[0_-8px_24px_rgba(60,64,67,0.12)] lg:static lg:z-0 lg:h-full lg:w-[360px] lg:max-h-none lg:shrink-0 lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none"
+            className="absolute inset-x-0 bottom-0 z-20 max-h-[58%] overflow-y-auto border-t border-line bg-white lg:static lg:z-0 lg:h-full lg:w-[360px] lg:max-h-none lg:shrink-0 lg:border-l lg:border-t-0"
           >
             <div className="flex items-center justify-between border-b border-line px-5 py-3 lg:hidden">
               <span className="text-[13px] font-medium">Dispatch</span>
@@ -430,6 +444,8 @@ export function DispatchPage() {
                 setForm={setForm}
                 pinMode={pinMode}
                 setPinMode={setPinMode}
+                origins={originOptions}
+                hospitals={hospitalOptions}
                 pending={createEmergency.isPending}
                 onDemo={applyDemoPreset}
                 onSubmit={() => {
@@ -453,20 +469,17 @@ export function DispatchPage() {
                 journey={journey.data}
                 calculating={calculateRoutes.isPending}
                 dispatching={dispatch.isPending}
-                corridorId={blockCorridor}
-                onCorridorChange={setBlockCorridor}
                 onAssign={(id) => assignVehicle.mutate(id)}
                 onCalculate={() => calculateRoutes.mutate()}
                 onSelect={(id) => selectRoute.mutate(id)}
                 onStart={() => dispatch.mutate(undefined)}
-                onScenario={(status) => demoScenario.mutate(status)}
-                scenarioPending={demoScenario.isPending}
               />
             )}
           </motion.aside>
         )}
       </AnimatePresence>
     </div>
+    </MapsApiGate>
   );
 }
 
@@ -486,7 +499,7 @@ function IncidentList({
       <div className="flex items-center justify-between px-4 py-4">
         <div className="flex items-center gap-2">
           <h2 className="text-[16px] font-semibold">Incidents</h2>
-          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-critical px-1.5 text-[11px] font-medium text-white">
+          <span className="grid h-5 min-w-5 place-items-center bg-critical px-1.5 text-[11px] font-medium text-white">
             {queue.length}
           </span>
         </div>
@@ -536,6 +549,8 @@ function NewEmergencyForm({
   setForm,
   pinMode,
   setPinMode,
+  origins,
+  hospitals,
   pending,
   onDemo,
   onSubmit,
@@ -544,6 +559,8 @@ function NewEmergencyForm({
   setForm: (next: typeof emptyForm | ((f: typeof emptyForm) => typeof emptyForm)) => void;
   pinMode: "origin" | "destination" | null;
   setPinMode: (mode: "origin" | "destination" | null) => void;
+  origins: Array<{ id: string; label: string; lat: number; lng: number }>;
+  hospitals: HospitalPlace[];
   pending: boolean;
   onDemo: () => void;
   onSubmit: () => void;
@@ -551,7 +568,7 @@ function NewEmergencyForm({
   return (
     <div>
       <div className="flex items-center justify-between px-5 pt-5">
-        <h2 className="text-[18px] font-semibold">New Emergency</h2>
+        <h2 className="text-[16px] font-bold">New incident</h2>
         <button className="text-[12px] font-medium text-nav" onClick={onDemo}>
           Mumbai demo
         </button>
@@ -581,50 +598,34 @@ function NewEmergencyForm({
           </select>
         </Field>
         <Field label="Origin">
-          <select
-            className={inputClass()}
-            value=""
-            onChange={(e) => {
-              const place = MUMBAI_ORIGINS.find((p) => p.id === e.target.value);
-              if (!place) return;
+          <PlaceSearch
+            value={form.originLabel}
+            placeholder="Search any Mumbai locality or address"
+            suggestions={origins}
+            onSelect={(place) =>
               setForm((f) => ({
                 ...f,
                 originLabel: place.label,
                 originLat: String(place.lat),
                 originLng: String(place.lng),
-              }));
-            }}
-          >
-            <option value="">{form.originLabel || "Select origin"}</option>
-            {MUMBAI_ORIGINS.map((place) => (
-              <option key={place.id} value={place.id}>
-                {place.label}
-              </option>
-            ))}
-          </select>
+              }))
+            }
+          />
         </Field>
         <Field label="Destination">
-          <select
-            className={inputClass()}
-            value=""
-            onChange={(e) => {
-              const place = MUMBAI_HOSPITALS.find((p) => p.id === e.target.value);
-              if (!place) return;
+          <PlaceSearch
+            value={form.destinationLabel}
+            placeholder="Search a hospital or type an address"
+            suggestions={hospitals}
+            onSelect={(place) =>
               setForm((f) => ({
                 ...f,
                 destinationLabel: place.label,
                 destinationLat: String(place.lat),
                 destinationLng: String(place.lng),
-              }));
-            }}
-          >
-            <option value="">{form.destinationLabel || "Select hospital"}</option>
-            {MUMBAI_HOSPITALS.map((place) => (
-              <option key={place.id} value={place.id}>
-                {place.label}
-              </option>
-            ))}
-          </select>
+              }))
+            }
+          />
         </Field>
         <div className="flex gap-2">
           <Button type="button" variant={pinMode === "origin" ? "primary" : "ghost"} className="flex-1" onClick={() => setPinMode("origin")}>
@@ -652,32 +653,24 @@ function ContextPanel({
   journey,
   calculating,
   dispatching,
-  corridorId,
-  onCorridorChange,
   onAssign,
   onCalculate,
   onSelect,
   onStart,
-  onScenario,
-  scenarioPending,
 }: {
   emergency: Emergency;
   recommendedVehicles: Array<Vehicle & { distanceMeters: number; reason?: string; recommended?: boolean }>;
   routeRequest: RouteRequest | null;
   recommended: Candidate | null;
   alternatives: Candidate[];
-  explanation?: Explanation; // used by parent WhyCard; kept for API completeness
+  explanation?: Explanation;
   journey?: JourneyDetail;
   calculating: boolean;
   dispatching: boolean;
-  corridorId: string;
-  onCorridorChange: (id: string) => void;
   onAssign: (id?: string) => void;
   onCalculate: () => void;
   onSelect: (id: string) => void;
   onStart: () => void;
-  onScenario: (status: RoadStatus) => void;
-  scenarioPending: boolean;
 }) {
   const recScore = displayScore(recommended?.score);
   return (
@@ -709,7 +702,7 @@ function ContextPanel({
                   key={vehicle.id}
                   onClick={() => onAssign(vehicle.id)}
                   className={cn(
-                    "w-full rounded-xl border px-3 py-2 text-left",
+                    "w-full border px-3 py-2 text-left",
                     vehicle.recommended ? "border-nav/40 bg-blue-50/50" : "border-line",
                   )}
                 >
@@ -734,10 +727,10 @@ function ContextPanel({
             <h3 className="text-[15px] font-semibold">Recommended Route</h3>
             <StatusChip tone="clear">Best</StatusChip>
           </div>
-          <div className="rounded-2xl border border-line p-4">
+          <div className="border border-line p-3">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-[32px] font-semibold leading-none tabular">{recommended.etaLabel}</div>
+                <div className="text-[22px] font-bold leading-none tabular">{recommended.etaLabel}</div>
                 <div className="mt-1 text-[13px] text-muted">
                   {recommended.distanceLabel}
                   {journey?.journey.estimatedArrivalAt
@@ -803,11 +796,17 @@ function ContextPanel({
                 {journey.vehicle.callSign}
                 {journey.journey.currentRouteLabel ? ` · ${journey.journey.currentRouteLabel}` : ""}
               </div>
-              <div className="mt-1 text-[28px] font-semibold tabular">
-                {Math.max(0, Math.round((journey.journey.remainingSeconds ?? 0) / 60))} min
+              <div className="mt-1 text-[22px] font-bold tabular">
+                {formatDuration(journey.journey.routeEtaSeconds ?? journey.journey.remainingSeconds ?? 0)}
               </div>
               <div className="text-[12px] text-muted">
-                {((journey.journey.remainingMeters ?? 0) / 1000).toFixed(1)} km remaining
+                Arrives {formatEtaClock(journey.journey.estimatedArrivalAt)}
+                {journey.journey.remainingMeters != null
+                  ? ` · ${((journey.journey.remainingMeters ?? 0) / 1000).toFixed(1)} km along route`
+                  : ""}
+                <span className="block text-[11px]">
+                  Simulated movement — selected route duration stays at dispatch
+                </span>
               </div>
             </div>
             <StatusChip tone={journey.journey.status === "ACTIVE" ? "clear" : "neutral"}>
@@ -821,30 +820,10 @@ function ContextPanel({
               transition={{ duration: 0.35 }}
             />
           </div>
-          {journey.journey.status === "ACTIVE" && (
-            <div className="mt-4 space-y-2">
-              <div className="text-[12px] font-medium text-muted">Demo simulation</div>
-              <select className={inputClass()} value={corridorId} onChange={(e) => onCorridorChange(e.target.value)}>
-                {DEMO_CORRIDORS.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <div className="grid grid-cols-3 gap-2">
-                {DEMO_PRESETS.map((preset) => (
-                  <Button
-                    key={preset.id}
-                    variant={preset.id === "BLOCKED" ? "danger" : "ghost"}
-                    disabled={scenarioPending}
-                    onClick={() => onScenario(preset.id)}
-                  >
-                    {preset.id === "BLOCKED" ? "Block road" : preset.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
+          <p className="mt-3 text-[11px] text-muted">
+            Road blockage is an admin action. Ask an admin to run a live simulation from
+            Admin → Evaluator.
+          </p>
           <ol className="mt-4 space-y-1.5">
             {journey.events.slice(0, 6).map((event) => (
               <li key={event.id} className="flex gap-2 text-[12px] text-muted">
@@ -912,14 +891,14 @@ function WhyCard({
   open: boolean;
   onToggle: () => void;
 }) {
-  const traffic = factorScore(recommended?.breakdown?.trafficPenalty ?? explanation.components?.trafficPenalty);
-  const road = factorScore(recommended?.breakdown?.roadPenalty ?? explanation.components?.roadPenalty);
-  const distance = factorScore(recommended?.breakdown?.distancePenalty ?? explanation.components?.distancePenalty);
-  const priority = 100;
+  const traffic = factorScore(recommended?.breakdown?.trafficScore ?? explanation.components?.trafficScore);
+  const road = factorScore(recommended?.breakdown?.roadStatusScore ?? explanation.components?.roadStatusScore);
+  const distance = factorScore(recommended?.breakdown?.distanceScore ?? explanation.components?.distanceScore);
+  const eta = factorScore(recommended?.breakdown?.travelTimeScore ?? explanation.components?.travelTimeScore);
   return (
     <motion.div
       layout
-      className="absolute bottom-5 left-3 z-20 hidden w-[min(520px,calc(100%-280px))] rounded-2xl border border-line bg-white/95 p-4 shadow-md backdrop-blur-sm md:block"
+      className="absolute bottom-5 left-3 z-20 hidden w-[min(520px,calc(100%-280px))] border border-line bg-white p-3 md:block"
     >
       <button onClick={onToggle} className="flex w-full items-center justify-between text-left">
         <span className="text-[15px] font-semibold">Why this route?</span>
@@ -935,16 +914,21 @@ function WhyCard({
             className="overflow-hidden"
           >
             <div className="mt-3 grid gap-4 sm:grid-cols-[1fr_1.1fr]">
-              <p className="text-[13px] leading-relaxed text-muted">
-                {explanation.summary ||
-                  explanation.reason ||
-                  "This route is optimal because it has lighter traffic, clear roads, and the fastest travel time for this emergency priority."}
-              </p>
+              <div className="text-[13px] leading-relaxed text-muted">
+                <p>{explanation.summary}</p>
+                {explanation.factors.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {explanation.factors.map((factor) => (
+                      <li key={factor}>— {factor}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               <div className="space-y-1.5">
+                <Bar label="ETA" value={eta} />
                 <Bar label="Traffic" value={traffic} />
-                <Bar label="Road Status" value={road} />
+                <Bar label="Road status" value={road} />
                 <Bar label="Distance" value={distance} />
-                <Bar label="Priority Match" value={priority} />
               </div>
             </div>
           </motion.div>

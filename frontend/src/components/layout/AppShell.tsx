@@ -17,44 +17,44 @@ export function AppShell() {
   const source = health.data?.googleRoutesConfigured ? "Google Routes ready" : "Demo fallback only";
 
   return (
-    <div className="flex h-full flex-col bg-white text-ink">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-2">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-critical text-[15px] font-semibold text-white">
-              +
-            </span>
-            <span className="text-[18px] font-semibold tracking-tight">RapidRoute</span>
+    <div className="flex h-full flex-col bg-soft text-ink">
+      <header className="flex h-12 shrink-0 items-center justify-between bg-header px-3 text-white">
+        <div className="flex items-center gap-6">
+          <div>
+            <div className="text-[16px] font-bold leading-none">RapidRoute</div>
+            <div className="mt-0.5 text-[10px] text-white/70">RIH-PS-011 · Dispatch System</div>
           </div>
-          <nav className="flex items-center gap-5 text-[14px]">
+          <nav className="flex items-center gap-1 text-[13px]">
             <ShellLink to="/" label="Dispatch" />
-            <ShellLink to="/admin" label="Admin" />
+            {user?.role === "ADMIN" && <ShellLink to="/admin" label="Admin" />}
           </nav>
         </div>
-        <div className="flex items-center gap-4 text-[13px]">
-          <span className="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-clear sm:inline-flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-clear" />
+        <div className="flex items-center gap-3 text-[12px]">
+          <span className="hidden border border-white/25 px-2 py-0.5 text-white/85 sm:inline">
             {source}
           </span>
-          <div className="hidden items-center gap-2 md:flex">
-            <span className="h-2 w-2 rounded-full bg-clear" />
-            <div className="leading-tight">
-              <div className="text-[11px] text-muted">Operator</div>
-              <div className="text-[13px] font-medium">{user?.name}</div>
+          <div className="hidden leading-tight md:block">
+            <div className="text-[10px] text-white/65">
+              {user?.role === "ADMIN" ? "Admin" : "Dispatcher"}
             </div>
+            <div className="font-medium">{user?.name}</div>
           </div>
           <button
             onClick={logout}
-            className="flex items-center gap-1.5 text-muted hover:text-ink"
+            className="flex items-center gap-1 text-white/80 hover:text-white"
             aria-label="Sign out"
           >
-            <LogOut size={16} />
+            <LogOut size={15} />
+            <span className="hidden sm:inline">Logout</span>
           </button>
         </div>
       </header>
       <div className="min-h-0 flex-1">
         <Outlet />
       </div>
+      <footer className="shrink-0 border-t border-line bg-white px-3 py-1 text-[10px] text-muted">
+        RapidRoute v1.0 · RIH-PS-011 · academic prototype
+      </footer>
     </div>
   );
 }
@@ -66,17 +66,12 @@ function ShellLink({ to, label }: { to: string; label: string }) {
       end={to === "/"}
       className={({ isActive }) =>
         cn(
-          "relative py-4 text-muted hover:text-ink",
-          isActive && "font-medium text-critical",
+          "px-3 py-1.5 text-white/80 hover:bg-white/10 hover:text-white",
+          isActive && "bg-white/15 font-medium text-white",
         )
       }
     >
-      {({ isActive }) => (
-        <>
-          {label}
-          {isActive && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-critical" />}
-        </>
-      )}
+      {label}
     </NavLink>
   );
 }

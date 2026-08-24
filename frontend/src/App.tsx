@@ -19,6 +19,12 @@ function Protected({ children }: { children: ReactNode }) {
   return children;
 }
 
+function AdminOnly({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (user?.role !== "ADMIN") return <Navigate to="/" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -31,7 +37,14 @@ export default function App() {
         }
       >
         <Route path="/" element={<DispatchPage />} />
-        <Route path="/admin" element={<AdminPage />} />
+        <Route
+          path="/admin"
+          element={
+            <AdminOnly>
+              <AdminPage />
+            </AdminOnly>
+          }
+        />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

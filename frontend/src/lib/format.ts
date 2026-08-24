@@ -1,12 +1,20 @@
 import type { IncidentType, Priority } from "../types";
 
-export function displayScore(penalty: number | null | undefined): number | null {
-  if (penalty == null || Number.isNaN(penalty)) return null;
-  return Math.max(0, Math.min(100, Math.round(100 - penalty)));
+export function formatDuration(seconds: number): string {
+  const mins = Math.max(0, Math.round(seconds / 60));
+  if (mins < 60) return `${mins} min`;
+  const hours = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem === 0 ? `${hours} h` : `${hours} h ${rem} min`;
 }
 
-export function factorScore(penalty: number | null | undefined): number {
-  return displayScore(penalty) ?? 0;
+export function displayScore(score: number | null | undefined): number | null {
+  if (score == null || Number.isNaN(score)) return null;
+  return Math.round(score);
+}
+
+export function factorScore(score: number | null | undefined): number {
+  return displayScore(score) ?? 0;
 }
 
 export function timeAgo(iso: string): string {

@@ -30,33 +30,25 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full bg-white">
-      <div className="relative hidden w-[46%] overflow-hidden border-r border-line bg-soft lg:block">
-        <div className="relative flex h-full flex-col justify-between p-12">
+    <div className="flex min-h-full flex-col bg-soft">
+      <div className="bg-header px-4 py-3 text-white">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="grid h-8 w-8 place-items-center rounded-md bg-critical text-white">+</span>
-              <span className="text-[20px] font-semibold">RapidRoute</span>
-            </div>
-            <h1 className="mt-10 max-w-sm text-[34px] font-semibold leading-tight tracking-tight">
-              Emergency routing that stays accountable.
-            </h1>
-            <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-muted">
-              Google supplies the roads. RapidRoute chooses the vehicle, scores the
-              candidates, and records why the route changed.
-            </p>
+            <div className="text-[18px] font-bold">RapidRoute</div>
+            <div className="text-[12px] text-white/80">Emergency Vehicle Dispatch &amp; Routing System</div>
           </div>
-          <p className="text-[13px] text-muted">A dispatch decision layer — not a maps replacement.</p>
+          <div className="text-right text-[11px] text-white/75">
+            <div>Problem statement RIH-PS-011</div>
+            <div>Academic prototype · v1.0</div>
+          </div>
         </div>
       </div>
-      <div className="flex flex-1 items-center justify-center px-6">
-        <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4">
-          <div>
-            <div className="text-[13px] font-medium text-muted">RapidRoute</div>
-            <h2 className="mt-1 text-[24px] font-semibold">
-              {mode === "login" ? "Sign in to dispatch" : "Create a dispatcher account"}
-            </h2>
-          </div>
+
+      <div className="flex flex-1 items-start justify-center px-4 py-10">
+        <form onSubmit={onSubmit} className="w-full max-w-md space-y-3 border border-line bg-white p-5">
+          <h1 className="border-b border-line pb-2 text-[18px] font-bold">
+            {mode === "login" ? "User Login" : "Register"}
+          </h1>
           {mode === "register" && (
             <Field label="Name">
               <input className={inputClass()} value={name} onChange={(e) => setName(e.target.value)} />
@@ -75,23 +67,44 @@ export function LoginPage() {
           </Field>
           {error && <p className="text-[13px] text-critical">{error}</p>}
           <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Working…" : mode === "login" ? "Enter console" : "Create account"}
+            {pending ? "Please wait…" : mode === "login" ? "Login" : "Create account"}
           </Button>
           <button
             type="button"
-            className="text-[13px] text-nav"
+            className="text-[13px] text-nav underline"
             onClick={() => {
               setMode(mode === "login" ? "register" : "login");
               setError(null);
             }}
           >
-            {mode === "login" ? "Need an account? Register" : "Already have an account? Sign in"}
+            {mode === "login" ? "New user? Register" : "Already registered? Login"}
           </button>
-          <p className="text-[12px] leading-relaxed text-muted">
-            Demo: dispatcher@rapidroute.local / RapidRoute!dispatch
-          </p>
+
+          <div className="border border-line bg-soft p-3 text-[12px]">
+            <div className="mb-1 font-bold">Test accounts (for demo)</div>
+            <table className="w-full text-left">
+              <tbody>
+                <tr>
+                  <td className="py-0.5 pr-2 font-medium">Dispatcher</td>
+                  <td className="py-0.5 font-mono text-[11px]">dispatcher@rapidroute.local</td>
+                </tr>
+                <tr>
+                  <td className="py-0.5 pr-2 font-medium">Admin</td>
+                  <td className="py-0.5 font-mono text-[11px]">admin@rapidroute.local</td>
+                </tr>
+                <tr>
+                  <td className="py-0.5 pr-2 font-medium">Password</td>
+                  <td className="py-0.5 font-mono text-[11px]">RapidRoute!dispatch / RapidRoute!admin</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </form>
       </div>
+
+      <footer className="border-t border-line bg-white px-4 py-2 text-center text-[11px] text-muted">
+        RapidRoute v1.0 · RIH-PS-011 · Google Routes + local scoring · not a commercial product
+      </footer>
     </div>
   );
 }

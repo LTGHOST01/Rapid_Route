@@ -134,6 +134,7 @@ export type Journey = {
   progress: number;
   remainingMeters?: number;
   remainingSeconds?: number;
+  routeEtaSeconds?: number;
   currentRouteLabel?: string;
   simulatedPosition?: boolean;
 };

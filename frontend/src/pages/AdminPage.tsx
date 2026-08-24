@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { Button, Field, Panel, StatusChip, inputClass, roadTone, vehicleTone } from "../components/ui";
 import { roadLabel, vehicleStatusLabel } from "../lib/labels";
 import type { Emergency, RoadCondition, RoadStatus, Vehicle, VehicleStatus, VehicleType } from "../types";
@@ -65,10 +66,10 @@ function Overview() {
   const s = stats.data?.stats;
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold">Operations</h1>
+      <h1 className="text-lg font-bold">System overview</h1>
       <p className="mt-1 text-[13px] text-muted">
-        Live counts from the dispatch database. Demo requests are labelled separately
-        from Google Routes.
+        Counts from the project database. Demo fallback requests are labelled separately
+        from live Google Routes.
       </p>
       <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Active journeys" value={s?.activeJourneys ?? "—"} />
@@ -470,44 +471,187 @@ function LogsAdmin() {
 type EvalResult = {
   noSuitableRoute: boolean;
   message: string;
-  recommended: { label: string; trafficLevel: string; roadStatus: string; etaSeconds: number } | null;
-  candidates: Array<{ label: string; trafficLevel: string; roadStatus: string; blocked: boolean; score: number | null }>;
+  recommended: {
+    label: string;
+    trafficLevel: string;
+    roadStatus: string;
+    etaSeconds: number;
+    score: number | null;
+  } | null;
+  candidates: Array<{
+    label: string;
+    trafficLevel: string;
+    roadStatus: string;
+    blocked: boolean;
+    score: number | null;
+  }>;
+};
+
+type ScenarioRun = {
+  id: string;
+  title: string;
+  description: string;
+  passed: boolean;
+  expectation: { expect: string; passWhen: string };
+  result: EvalResult;
 };
 
 function EvalAdmin() {
-  const scenarios = useQuery({
-    queryKey: ["eval-scenarios"],
+  const { user } = useAuth();
+  const [journeyId, setJourneyId] = useState("");
+  const catalog = useQuery({
+    queryKey: ["eval-catalog"],
     queryFn: () =>
       api<{
-        scenarios: Array<{ id: string; result: EvalResult }>;
+        label: string;
+        scenarios: Array<{
+          id: string;
+          title: string;
+          description: string;
+          expectation: { expect: string; passWhen: string };
+        }>;
       }>("/eval/scenarios"),
+  });
+  const active = useQuery({
+    queryKey: ["active-journeys"],
+    enabled: user?.role === "ADMIN",
+    queryFn: () =>
+      api<{
+        journeys: Array<{
+          id: string;
+          emergencyCode: string;
+          vehicleCallSign: string;
+          destination: string;
+        }>;
+      }>("/demo/active-journeys"),
+    refetchInterval: 5000,
+  });
+  const runAll = useMutation({
+    mutationFn: () =>
+      api<{ results: ScenarioRun[] }>("/eval/run-all"),
+  });
+  const live = useMutation({
+    mutationFn: (status: "CLEAR" | "CONGESTED" | "BLOCKED") =>
+      api<{
+        reroute?: {
+          adopted?: boolean;
+          reason?: string;
+          currentBlocked?: boolean;
+        };
+      }>("/demo/road-scenario", {
+        method: "POST",
+        body: JSON.stringify({
+          status,
+          journeyId: journeyId || active.data?.journeys[0]?.id,
+        }),
+      }),
+    onSuccess: () => {
+      active.refetch();
+    },
   });
 
   return (
-    <div className="mx-auto max-w-4xl space-y-5">
+    <div className="mx-auto max-w-3xl space-y-5">
       <div>
-        <h1 className="text-xl font-semibold">Evaluator scenarios</h1>
+        <div className="mb-2 inline-flex bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
+          EVAL MODULE
+        </div>
+        <h1 className="text-lg font-bold">Evaluator</h1>
         <p className="mt-1 text-[13px] text-muted">
-          Mandatory input columns: vehicle_id, vehicle_type, emergency_type,
-          current_location, destination, latitude, longitude, traffic_level,
-          road_status, road_distance, estimated_travel_time, timestamp.
+          Isolated scoring checks using the mandatory CSV/JSON schema. These are
+          not operational incidents. Live road blockage is an admin-only action
+          against the vehicle’s current selected route.
         </p>
       </div>
-      {scenarios.data?.scenarios.map((scenario) => (
-        <div key={scenario.id} className="rounded-xl border border-line bg-white px-4 py-3">
-          <div className="font-medium">{scenario.id.replaceAll("_", " ")}</div>
-          <p className="mt-1 text-[13px] text-muted">{scenario.result.message}</p>
-          {scenario.result.noSuitableRoute ? (
-            <p className="mt-2 text-[13px] font-medium text-critical">
-              No suitable route available
-            </p>
+
+      <div className="rounded-xl border border-line bg-white p-4">
+        <div className="text-[12px] font-medium text-amber-700">LIVE SIMULATION · ADMIN</div>
+        <p className="mt-1 text-[13px] text-muted">
+          Blocks a mid-corridor slice of the active Google route, then RapidRoute
+          re-scores alternatives. Dispatchers cannot apply road blocks.
+        </p>
+        <Field label="Active journey">
+          <select
+            className={inputClass()}
+            value={journeyId}
+            onChange={(e) => setJourneyId(e.target.value)}
+          >
+            <option value="">
+              {active.data?.journeys[0]
+                ? `Latest: ${active.data.journeys[0].emergencyCode}`
+                : "No active journey"}
+            </option>
+            {(active.data?.journeys ?? []).map((journey) => (
+              <option key={journey.id} value={journey.id}>
+                {journey.emergencyCode} · {journey.vehicleCallSign} → {journey.destination}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="mt-3 flex gap-2">
+          <Button variant="ghost" disabled={live.isPending} onClick={() => live.mutate("CLEAR")}>
+            Clear
+          </Button>
+          <Button variant="warn" disabled={live.isPending} onClick={() => live.mutate("CONGESTED")}>
+            Congest
+          </Button>
+          <Button variant="danger" disabled={live.isPending} onClick={() => live.mutate("BLOCKED")}>
+            Block current route
+          </Button>
+        </div>
+        {live.isError && (
+          <p className="mt-2 text-[13px] text-critical">{(live.error as Error).message}</p>
+        )}
+        {live.data?.reroute && (
+          <p className="mt-2 text-[13px]">
+            {live.data.reroute.currentBlocked ? "Current route blocked. " : ""}
+            {live.data.reroute.adopted
+              ? `Adopted alternative: ${live.data.reroute.reason}`
+              : live.data.reroute.reason}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-line bg-white p-4">
+        <div className="text-[12px] font-medium text-amber-700">FOUR SCORING SCENARIOS</div>
+        <p className="mt-1 text-[13px] text-muted">
+          Each case is scored independently against the mandatory schema.
+        </p>
+        <div className="mt-3 space-y-2 text-[13px]">
+          {(catalog.data?.scenarios ?? []).map((scenario) => (
+            <div key={scenario.id} className="rounded-lg border border-line px-3 py-2">
+              <div className="font-medium">{scenario.title}</div>
+              <div className="text-[12px] text-muted">{scenario.expectation.expect}</div>
+            </div>
+          ))}
+        </div>
+        <Button className="mt-3" onClick={() => runAll.mutate()} disabled={runAll.isPending}>
+          {runAll.isPending ? "Running…" : "Run all 4 scenarios"}
+        </Button>
+      </div>
+      {runAll.data?.results.map((row) => (
+        <div key={row.id} className="rounded-xl border border-line bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[12px] font-medium text-amber-700">{row.title.toUpperCase()}</div>
+            <StatusChip tone={row.passed ? "clear" : "critical"}>{row.passed ? "Pass" : "Fail"}</StatusChip>
+          </div>
+          <p className="mt-2 text-[14px]">{row.result.message}</p>
+          {row.result.noSuitableRoute ? (
+            <p className="mt-2 text-[13px] font-medium text-critical">No suitable route available</p>
           ) : (
             <p className="mt-2 text-[13px]">
-              Selected {scenario.result.recommended?.label} ·{" "}
-              {scenario.result.recommended?.trafficLevel} traffic ·{" "}
-              {scenario.result.recommended?.roadStatus}
+              Selected {row.result.recommended?.label} · {row.result.recommended?.trafficLevel} traffic ·{" "}
+              {row.result.recommended?.roadStatus} · RapidRoute score {row.result.recommended?.score}
             </p>
           )}
+          <div className="mt-3 space-y-1 text-[13px] text-muted">
+            {row.result.candidates.map((candidate) => (
+              <div key={candidate.label}>
+                {candidate.label}: {candidate.blocked ? "blocked / not eligible" : `score ${candidate.score}`} ·{" "}
+                {candidate.trafficLevel} / {candidate.roadStatus}
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>
