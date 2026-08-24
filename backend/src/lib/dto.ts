@@ -10,6 +10,7 @@ import type {
   User,
 } from "@prisma/client";
 import { formatDistance, formatDuration, toNumber } from "./geo";
+import { qualityFromPenalty } from "../services/routeScoringService";
 
 export function publicUser(user: User) {
   return {
@@ -75,7 +76,7 @@ export function publicRoadCondition(condition: RoadCondition) {
 }
 
 export function publicCandidate(candidate: RouteCandidate) {
-  const score = candidate.score == null ? null : toNumber(candidate.score);
+  const penalty = candidate.score == null ? null : toNumber(candidate.score);
   return {
     id: candidate.id,
     requestId: candidate.requestId,
@@ -89,7 +90,8 @@ export function publicCandidate(candidate: RouteCandidate) {
     trafficLevel: candidate.trafficLevel,
     roadImpact: candidate.roadImpact,
     blocked: candidate.blocked,
-    score,
+    penalty,
+    score: qualityFromPenalty(penalty),
     corridorIds: candidate.corridorIds,
     breakdown: candidate.breakdown,
   };

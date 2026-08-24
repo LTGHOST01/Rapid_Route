@@ -73,6 +73,41 @@ export function encodePolyline(points: LatLng[]): string {
   return result;
 }
 
+export function remainingEncodedPolyline(encoded: string, progress: number): string {
+  const points = decodePolyline(encoded);
+  if (points.length < 2) return encoded;
+  const start = Math.min(points.length - 2, Math.max(0, Math.floor((points.length - 1) * progress)));
+  return encodePolyline(points.slice(start));
+}
+
+/** Mid-corridor slice still ahead of the vehicle. Shared origin/destination tails are excluded. */
+export function blockedSliceEncodedPolyline(encoded: string, progress: number): string {
+  const points = decodePolyline(encoded);
+  if (points.length < 4) return encoded;
+  const start = Math.min(points.length - 3, Math.max(0, Math.floor((points.length - 1) * progress)));
+  const remaining = points.slice(start);
+  if (remaining.length < 4) return encodePolyline(remaining);
+  const from = Math.floor(remaining.length * 0.35);
+  const to = Math.max(from + 4, Math.floor(remaining.length * 0.55));
+  return encodePolyline(remaining.slice(from, Math.min(remaining.length, to)));
+}
+
+export function routeOverlapsBlocked(
+  routePolyline: string,
+  blockedPolyline: string,
+  thresholdMeters = 70,
+  minBlockedHitRatio = 0.45,
+): boolean {
+  const route = samplePoints(decodePolyline(routePolyline));
+  const blocked = samplePoints(decodePolyline(blockedPolyline), 40);
+  if (route.length === 0 || blocked.length === 0) return false;
+  let hits = 0;
+  for (const point of blocked) {
+    if (route.some((other) => haversineMeters(point, other) <= thresholdMeters)) hits += 1;
+  }
+  return hits / blocked.length >= minBlockedHitRatio;
+}
+
 function encodeSigned(value: number): string {
   let encoded = value < 0 ? ~(value << 1) : value << 1;
   let out = "";

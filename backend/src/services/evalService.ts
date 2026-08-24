@@ -9,6 +9,7 @@ import {
 import {
   explainSelection,
   pickWinner,
+  qualityFromPenalty,
   scoreCandidates,
   type ScoreInput,
 } from "./routeScoringService";
@@ -46,6 +47,58 @@ export function parseEvalRecords(rows: unknown[]): EvalRecord[] {
     return parsed.data;
   });
 }
+
+export function scenarioPassed(id: EvalScenarioId, result: ReturnType<typeof evaluateRecords>): boolean {
+  if (id === "low_traffic") {
+    return (
+      !result.noSuitableRoute &&
+      result.recommended?.trafficLevel === "LOW" &&
+      (result.recommended?.score ?? 0) > 90
+    );
+  }
+  if (id === "heavy_traffic") {
+    return (
+      !result.noSuitableRoute &&
+      result.recommended?.trafficLevel === "LOW" &&
+      (result.recommended?.etaSeconds ?? 9999) < 32 * 60
+    );
+  }
+  if (id === "road_blockage") {
+    return (
+      result.candidates[0]?.blocked === true &&
+      result.candidates[0]?.eligible === false &&
+      result.recommended != null &&
+      result.recommended.roadStatus !== "BLOCKED"
+    );
+  }
+  return (
+    result.noSuitableRoute &&
+    result.recommended == null &&
+    result.message === NO_SUITABLE_ROUTE
+  );
+}
+
+export const SCENARIO_EXPECTATIONS: Record<
+  EvalScenarioId,
+  { expect: string; passWhen: string }
+> = {
+  low_traffic: {
+    expect: "Fastest clear corridor (low traffic, score above 90).",
+    passWhen: "Recommended traffic is LOW and quality score > 90",
+  },
+  heavy_traffic: {
+    expect: "Skip the congested primary corridor for a clearer alternative.",
+    passWhen: "Recommended traffic is LOW and ETA is under 32 minutes",
+  },
+  road_blockage: {
+    expect: "Drop the blocked corridor and keep a clear alternative.",
+    passWhen: "First candidate is ineligible and a non-blocked route is selected",
+  },
+  destination_unreachable: {
+    expect: "Report that no suitable route exists.",
+    passWhen: "noSuitableRoute is true with the required message",
+  },
+};
 
 export function evaluateRecords(records: EvalRecord[]) {
   const priority = normalizePriority(records[0].emergency_type);
@@ -99,7 +152,8 @@ export function evaluateRecords(records: EvalRecord[]) {
           roadStatus: winner.roadImpact,
           etaSeconds: winner.etaSeconds,
           distanceMeters: winner.distanceMeters,
-          score: winner.score,
+          penalty: winner.score,
+          score: qualityFromPenalty(winner.score),
         }
       : null,
     candidates: scored.map((candidate) => ({
@@ -110,7 +164,8 @@ export function evaluateRecords(records: EvalRecord[]) {
       distanceMeters: candidate.distanceMeters,
       blocked: candidate.blocked,
       eligible: candidate.eligible,
-      score: candidate.score,
+      penalty: candidate.score,
+      score: qualityFromPenalty(candidate.score),
       ineligibilityReason: candidate.ineligibilityReason,
     })),
     explanation: winner

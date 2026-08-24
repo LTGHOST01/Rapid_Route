@@ -2,7 +2,7 @@ import type { Prisma, RoadStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { NotFoundError } from "../lib/errors";
 import { publicRoadCondition } from "../lib/dto";
-import { routeIntersectsGeometry, type LatLng } from "../lib/geo";
+import { routeIntersectsGeometry, routeOverlapsBlocked, type LatLng } from "../lib/geo";
 import type { NormalizedRoute } from "./demoFallbackService";
 
 export type ConditionGeometry = {
@@ -117,10 +117,14 @@ export function tagRouteWithConditions(
   roadConditionIds: string[];
 } {
   const matching = conditions.filter((condition) => {
+    const liveBlock = condition.corridorId.startsWith("JOURNEY_");
+    const geometry = (condition.geometry ?? {}) as ConditionGeometry;
+    if (liveBlock && geometry.polyline) {
+      return routeOverlapsBlocked(route.polyline, geometry.polyline);
+    }
     if (route.corridorIds.length > 0) {
       return route.corridorIds.includes(condition.corridorId);
     }
-    const geometry = (condition.geometry ?? {}) as ConditionGeometry;
     if (geometry.polyline || geometry.points?.length) {
       return routeIntersectsGeometry(route.polyline, geometry);
     }
@@ -149,6 +153,7 @@ export function tagRouteWithConditions(
 export async function upsertDemoScenario(input: {
   status: Extract<RoadStatus, "CLEAR" | "CONGESTED" | "BLOCKED">;
   corridorId: string;
+  geometry?: ConditionGeometry;
   reportedById?: string;
 }) {
   const titles: Record<typeof input.status, string> = {
@@ -162,11 +167,12 @@ export async function upsertDemoScenario(input: {
     orderBy: { updatedAt: "desc" },
   });
 
-  const geometry = existing?.geometry ?? {
-    type: "corridor",
-    corridorId: input.corridorId,
-    label: input.corridorId,
-  };
+  const geometry = input.geometry ??
+    existing?.geometry ?? {
+      type: "corridor",
+      corridorId: input.corridorId,
+      label: input.corridorId,
+    };
 
   if (existing) {
     return publicRoadCondition(

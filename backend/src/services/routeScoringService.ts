@@ -41,9 +41,15 @@ export type ScoreInput = {
   corridorIds?: string[];
 };
 
+export function qualityFromPenalty(penalty: number | null | undefined): number | null {
+  if (penalty == null || Number.isNaN(penalty)) return null;
+  return Number(Math.max(0, Math.min(100, 100 - penalty)).toFixed(2));
+}
+
 export type ScoredCandidate<T extends ScoreInput = ScoreInput> = T & {
   eligible: boolean;
   score: number | null;
+  qualityScore: number | null;
   etaPenalty: number;
   distancePenalty: number;
   trafficPenalty: number;
@@ -103,6 +109,7 @@ export function scoreCandidates<T extends ScoreInput>(
         blocked: true,
         eligible: false,
         score: null,
+        qualityScore: null,
         etaPenalty,
         distancePenalty,
         trafficPenalty,
@@ -121,6 +128,7 @@ export function scoreCandidates<T extends ScoreInput>(
       ...candidate,
       eligible: true,
       score: Number(score.toFixed(2)),
+      qualityScore: qualityFromPenalty(Number(score.toFixed(2))),
       etaPenalty: Number(etaPenalty.toFixed(2)),
       distancePenalty: Number(distancePenalty.toFixed(2)),
       trafficPenalty,
@@ -226,11 +234,11 @@ export function explainSelection(
       distancePenalty: winner.distancePenalty,
       trafficPenalty: winner.trafficPenalty,
       roadPenalty: winner.roadPenalty,
-      travelTimeScore: winner.etaPenalty,
-      distanceScore: winner.distancePenalty,
-      trafficScore: winner.trafficPenalty,
-      roadStatusScore: winner.roadPenalty,
-      score: winner.score,
+      travelTimeScore: qualityFromPenalty(winner.etaPenalty) ?? 0,
+      distanceScore: qualityFromPenalty(winner.distancePenalty) ?? 0,
+      trafficScore: qualityFromPenalty(winner.trafficPenalty) ?? 0,
+      roadStatusScore: qualityFromPenalty(winner.roadPenalty) ?? 0,
+      score: qualityFromPenalty(winner.score) ?? 0,
     },
     roadConditionIds: winner.roadConditionIds ?? [],
   };
@@ -241,12 +249,14 @@ function buildSummary(
   nextBest: ScoredCandidate | undefined,
   priority: EmergencyPriority,
 ): string {
+  const quality = qualityFromPenalty(winner.score);
+  const nextQuality = nextBest?.score != null ? qualityFromPenalty(nextBest.score) : null;
   const parts = [
-    `${winner.label} is recommended for this ${priority.toLowerCase()} incident (score ${winner.score}).`,
+    `${winner.label} is recommended for this ${priority.toLowerCase()} incident (RapidRoute score ${quality}).`,
   ];
-  if (nextBest?.score != null) {
+  if (nextQuality != null) {
     parts.push(
-      `It outranks ${nextBest.label} (${nextBest.score}) after weighting ETA, distance, traffic, and local road status.`,
+      `It outranks ${nextBest!.label} (score ${nextQuality}) after weighting ETA, distance, traffic, and local road status.`,
     );
   }
   return parts.join(" ");
@@ -288,11 +298,13 @@ export function candidateBreakdown(candidate: ScoredCandidate) {
     distancePenalty: candidate.distancePenalty,
     trafficPenalty: candidate.trafficPenalty,
     roadPenalty: candidate.roadPenalty,
-    travelTimeScore: candidate.etaPenalty,
-    distanceScore: candidate.distancePenalty,
-    trafficScore: candidate.trafficPenalty,
-    roadStatusScore: candidate.roadPenalty,
-    score: candidate.score,
+    travelTimeScore: qualityFromPenalty(candidate.etaPenalty),
+    distanceScore: qualityFromPenalty(candidate.distancePenalty),
+    trafficScore: qualityFromPenalty(candidate.trafficPenalty),
+    roadStatusScore: qualityFromPenalty(candidate.roadPenalty),
+    qualityScore: qualityFromPenalty(candidate.score),
+    score: qualityFromPenalty(candidate.score),
+    penalty: candidate.score,
     eligible: candidate.eligible,
     blocked: candidate.blocked,
     ineligibilityReason: candidate.ineligibilityReason,

@@ -14,7 +14,7 @@ import {
   candidateBreakdown,
 } from "./routeScoringService";
 
-const TICK_PROGRESS = 0.04;
+const TICK_PROGRESS = 0.008;
 
 async function loadJourney(id: string) {
   const journey = await prisma.journey.findUnique({
@@ -48,11 +48,15 @@ export async function getJourney(id: string) {
 function serializeJourney(journey: Awaited<ReturnType<typeof loadJourney>>) {
   const progress = toNumber(journey.progress);
   const remaining = 1 - progress;
+  const routeEtaSeconds = journey.selection.candidate.etaSeconds;
+  const arrivalMs = journey.estimatedArrivalAt.getTime();
+  const remainingSeconds = Math.max(0, Math.round((arrivalMs - Date.now()) / 1000));
   return {
     journey: {
       ...publicJourney(journey),
       remainingMeters: Math.round(journey.selection.candidate.distanceMeters * remaining),
-      remainingSeconds: Math.round(journey.selection.candidate.etaSeconds * remaining),
+      remainingSeconds,
+      routeEtaSeconds,
       currentRouteLabel: journey.selection.candidate.label,
     },
     emergency: {
@@ -90,9 +94,6 @@ export async function tickJourney(id: string, steps = 1) {
 
   progress = Math.min(1, progress + TICK_PROGRESS * steps);
   const position = pointAlongPolyline(points, progress);
-  const remaining = 1 - progress;
-  const remainingSeconds = Math.round(journey.selection.candidate.etaSeconds * remaining);
-  const estimatedArrivalAt = new Date(Date.now() + remainingSeconds * 1000);
 
   const milestoneEvents: Prisma.RouteEventCreateManyInput[] = [];
   const newBucket = Math.floor(progress / 0.25);
@@ -154,7 +155,6 @@ export async function tickJourney(id: string, steps = 1) {
           progress,
           lastLat: position.lat,
           lastLng: position.lng,
-          estimatedArrivalAt,
         },
       }),
       prisma.emergencyVehicle.update({
@@ -170,6 +170,28 @@ export async function tickJourney(id: string, steps = 1) {
   }
 
   return getJourney(id);
+}
+
+export async function listActiveJourneys() {
+  const journeys = await prisma.journey.findMany({
+    where: { status: "ACTIVE" },
+    include: {
+      emergency: true,
+      vehicle: true,
+      selection: { include: { candidate: true } },
+    },
+    orderBy: { startedAt: "desc" },
+  });
+  return journeys.map((journey) => ({
+    id: journey.id,
+    emergencyCode: journey.emergency.code,
+    origin: journey.emergency.originLabel,
+    destination: journey.emergency.destinationLabel,
+    vehicleCallSign: journey.vehicle.callSign,
+    routeLabel: journey.selection.candidate.label,
+    progress: toNumber(journey.progress),
+    etaSeconds: journey.selection.candidate.etaSeconds,
+  }));
 }
 
 export async function listEvents(id: string) {
@@ -328,7 +350,7 @@ export async function evaluateReroute(
 
   const winnerRow = createdCandidates.find((row) => row.label === winner.label)!;
   const decision = options.force
-    ? { adopt: true, reason: "Dispatcher forced reroute" }
+    ? { adopt: true, reason: options.reason ?? "Admin forced reroute" }
     : shouldAdoptReroute(current, {
         score: winner.score,
         etaSeconds: winner.etaSeconds,
