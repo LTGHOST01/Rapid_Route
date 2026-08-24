@@ -55,13 +55,20 @@ export type SelectionExplanation = {
   weights: ScoringWeights;
   winnerLabel: string | null;
   summary: string;
+  reason: string;
   factors: string[];
   excluded: Array<{ label: string; reason: string }>;
+  emergencyPriority: EmergencyPriority;
+  blocked: boolean;
   components: {
     etaPenalty: number;
     distancePenalty: number;
     trafficPenalty: number;
     roadPenalty: number;
+    travelTimeScore: number;
+    distanceScore: number;
+    trafficScore: number;
+    roadStatusScore: number;
     score: number;
   } | null;
   roadConditionIds: string[];
@@ -143,11 +150,15 @@ export function explainSelection(
     .map((c) => ({ label: c.label, reason: c.ineligibilityReason ?? "Ineligible" }));
 
   if (!winner || winner.score == null) {
+    const summary =
+      "No suitable route available. The destination cannot currently be reached through the available routes.";
     return {
       weights,
       winnerLabel: null,
-      summary:
-        "No eligible route. Every candidate intersects an active blocked corridor. Operator review is required — RapidRoute will not invent a safe path.",
+      summary,
+      reason: summary,
+      emergencyPriority: priority,
+      blocked: true,
       factors: ["Hard safety rule: blocked roads are excluded before scoring"],
       excluded,
       components: null,
@@ -198,10 +209,16 @@ export function explainSelection(
 
   const summary = buildSummary(winner, nextBest, priority);
 
+  const reason =
+    "Lowest weighted emergency travel score while avoiding blocked roads.";
+
   return {
     weights,
     winnerLabel: winner.label,
     summary,
+    reason,
+    emergencyPriority: priority,
+    blocked: false,
     factors,
     excluded,
     components: {
@@ -209,6 +226,10 @@ export function explainSelection(
       distancePenalty: winner.distancePenalty,
       trafficPenalty: winner.trafficPenalty,
       roadPenalty: winner.roadPenalty,
+      travelTimeScore: winner.etaPenalty,
+      distanceScore: winner.distancePenalty,
+      trafficScore: winner.trafficPenalty,
+      roadStatusScore: winner.roadPenalty,
       score: winner.score,
     },
     roadConditionIds: winner.roadConditionIds ?? [],
@@ -267,8 +288,13 @@ export function candidateBreakdown(candidate: ScoredCandidate) {
     distancePenalty: candidate.distancePenalty,
     trafficPenalty: candidate.trafficPenalty,
     roadPenalty: candidate.roadPenalty,
+    travelTimeScore: candidate.etaPenalty,
+    distanceScore: candidate.distancePenalty,
+    trafficScore: candidate.trafficPenalty,
+    roadStatusScore: candidate.roadPenalty,
     score: candidate.score,
     eligible: candidate.eligible,
+    blocked: candidate.blocked,
     ineligibilityReason: candidate.ineligibilityReason,
   };
 }

@@ -54,7 +54,7 @@ Use UUID IDs, UTC timestamps, Prisma enums, `Decimal`/numeric latitude and longi
 
 All application routes are mounted under `/api`. `/health` is also exposed at the server root for Railway.
 
-`POST /api/auth/login`; `GET /api/auth/me`
+`POST /api/auth/login`; `POST /api/auth/register`; `GET /api/auth/me`
 
 `GET/POST /api/emergencies`; `GET /api/emergencies/:id`; `POST /api/emergencies/:id/assign-vehicle`; `POST /api/emergencies/:id/routes`; `POST /api/emergencies/:id/select-route`; `POST /api/emergencies/:id/dispatch`
 
@@ -62,7 +62,13 @@ All application routes are mounted under `/api`. `/health` is also exposed at th
 
 `GET /api/journeys/:id`; `POST /api/journeys/:id/tick`; `POST /api/journeys/:id/reroute`; `GET /api/journeys/:id/events`
 
-`POST /api/demo/road-scenario` — labelled DEMO SIMULATION (CLEAR / CONGESTED / BLOCKED). Updates a corridor report and evaluates reroute for the active journey.
+`POST /api/demo/road-scenario` — labelled DEMO SIMULATION (CLEAR / CONGESTED / BLOCKED). Updates a corridor report and evaluates reroute for the active journey. The deterministic demo blocks `SION_LINK` (tagged onto demo Route A: Dadar → KEM).
+
+`GET /api/catalog/locations` — Mumbai origins (Dadar, Sion, Kurla, Mumbai Central), hospitals (KEM, Sion Hospital, JJ), and demo corridors.
+
+`GET /api/eval/schema`; `GET /api/eval/scenarios`; `GET /api/eval/scenarios/:id`; `POST /api/eval/ingest` — mandatory CSV/JSON evaluator input (`vehicle_id` … `timestamp`). Unreachable destinations return “No suitable route available.”
+
+`DELETE /api/vehicles/:id` and `DELETE /api/road-conditions/:id` (admin).
 
 `GET /api/logs/route-requests`; `GET /api/logs/emergencies`; `GET /api/logs/journeys`; `GET /api/admin/stats`
 
@@ -72,6 +78,7 @@ Validate bodies with Zod, authorize every protected endpoint, and return only pu
 
 ## Implementation notes
 
+- Emergencies store `incidentType` (`MEDICAL/TRAUMA/FIRE/POLICE`). Vehicle ranking uses haversine distance among available units of the matching type; CRITICAL incidents may prefer a nearby ALS ambulance. Each recommendation includes a plain-language reason.
 - Route calculation origin is the assigned vehicle’s current coordinates (emergency origin if no vehicle is assigned). Destination is the incident hospital.
 - Google Routes is requested with `DRIVE`, `TRAFFIC_AWARE`, `computeAlternativeRoutes: true`, and a minimal field mask. Failures (missing key, timeout, 429, 5xx) fall through to fixture candidates labelled **DEMO SIMULATION**.
 - Road-to-route matching uses the candidate’s corridor IDs and, when geometry is present, a proximity check against the encoded polyline. This is simulated local-condition input, not a municipal feed.

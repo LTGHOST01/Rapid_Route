@@ -13,6 +13,8 @@ import { logsRouter } from "./routes/logs";
 import { healthRouter } from "./routes/health";
 import { adminRouter } from "./routes/admin";
 import { demoRouter } from "./routes/demo";
+import { catalogRouter } from "./routes/catalog";
+import { evalRouter } from "./routes/eval";
 
 export function createApp() {
   const app = express();
@@ -37,6 +39,8 @@ export function createApp() {
   app.use("/api/logs", logsRouter);
   app.use("/api/admin", adminRouter);
   app.use("/api/demo", demoRouter);
+  app.use("/api/catalog", catalogRouter);
+  app.use("/api/eval", evalRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

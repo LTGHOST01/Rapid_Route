@@ -1,0 +1,13 @@
+vehicle_id,vehicle_type,emergency_type,current_location,destination,latitude,longitude,traffic_level,road_status,road_distance,estimated_travel_time,timestamp
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,low,clear,9.2,18,2026-08-24T10:00:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,medium,clear,10.1,21,2026-08-24T10:00:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,high,clear,11.4,24,2026-08-24T10:00:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,high,congested,8.4,32,2026-08-24T10:05:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,low,clear,10.6,20,2026-08-24T10:05:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,medium,clear,11.1,23,2026-08-24T10:05:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,low,blocked,9.2,18,2026-08-24T10:10:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,medium,clear,10.8,22,2026-08-24T10:10:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,low,clear,12.0,25,2026-08-24T10:10:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,high,blocked,9.2,18,2026-08-24T10:15:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,high,blocked,11.0,24,2026-08-24T10:15:00Z
+AMB-101,AMBULANCE,CRITICAL,Dadar,"KEM Hospital, Parel",19.0178,72.8478,medium,blocked,13.4,29,2026-08-24T10:15:00Z

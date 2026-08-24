@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RapidRoute evaluator input",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "vehicle_id",
+      "vehicle_type",
+      "emergency_type",
+      "current_location",
+      "destination",
+      "latitude",
+      "longitude",
+      "traffic_level",
+      "road_status",
+      "road_distance",
+      "estimated_travel_time",
+      "timestamp"
+    ],
+    "properties": {
+      "vehicle_id": { "type": "string" },
+      "vehicle_type": { "type": "string" },
+      "emergency_type": { "type": "string" },
+      "current_location": { "type": "string" },
+      "destination": { "type": "string" },
+      "latitude": { "type": "number" },
+      "longitude": { "type": "number" },
+      "traffic_level": { "type": "string" },
+      "road_status": { "type": "string" },
+      "road_distance": { "type": "number", "description": "Kilometers if < 200, otherwise meters" },
+      "estimated_travel_time": { "type": "number", "description": "Minutes if <= 180, otherwise seconds" },
+      "timestamp": { "type": "string" }
+    }
+  }
+}

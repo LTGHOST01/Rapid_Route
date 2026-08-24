@@ -76,6 +76,27 @@ Seed accounts (local/demo only):
 
 Without Google keys the API and map run in labelled **DEMO SIMULATION**. Add `GOOGLE_MAPS_API_KEY` (server, Routes API only) and `VITE_GOOGLE_MAPS_BROWSER_KEY` (browser, Maps JavaScript API + HTTP referrers) to use live roads. The frontend never calls Google Routes.
 
+Deterministic demo: **Dadar → KEM Hospital**. Load the Mumbai demo, assign the nearest Dadar ambulance, calculate routes, start the journey, then **Block road** on **Sion–Parel link**. Route A becomes ineligible and RapidRoute adopts Route B.
+
+## Mandatory evaluator input
+
+CSV/JSON records must use exactly these columns:
+
+`vehicle_id, vehicle_type, emergency_type, current_location, destination, latitude, longitude, traffic_level, road_status, road_distance, estimated_travel_time, timestamp`
+
+- Schema: `backend/data/eval-input.schema.json`
+- Sample CSV: `backend/data/eval-scenarios.csv`
+- `GET /api/eval/schema`
+- `GET /api/eval/scenarios` — the four required resilience cases
+- `POST /api/eval/ingest` — authenticated JSON `{ "records": [...] }` or `{ "csv": "..." }`
+
+| Scenario | Expected result |
+|---|---|
+| Low-traffic route | Selects the suitable faster/lighter-traffic candidate |
+| Heavy traffic | Leaves the congested primary and recommends a clearer alternative |
+| Road blockage | Marks the blocked candidate ineligible and keeps an open alternative |
+| Destination unreachable | Returns **No suitable route available** — destination cannot currently be reached |
+
 Detailed implementation and deployment steps are in [CODEX_IMPLEMENTATION_PLAN.md](docs/CODEX_IMPLEMENTATION_PLAN.md) and [DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## Security
