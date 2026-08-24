@@ -18,19 +18,20 @@ type Stats = {
   };
 };
 
-type Tab = "overview" | "vehicles" | "roads" | "logs";
+type Tab = "overview" | "vehicles" | "roads" | "logs" | "eval";
 
 export function AdminPage() {
   const [tab, setTab] = useState<Tab>("overview");
   return (
-    <div className="flex h-full flex-col bg-ink-950 md:flex-row">
-      <aside className="flex gap-1 overflow-x-auto border-b border-ink-700 px-3 py-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
+    <div className="flex h-full flex-col bg-soft md:flex-row">
+      <aside className="flex gap-1 overflow-x-auto border-b border-line bg-white px-3 py-2 md:w-48 md:flex-col md:border-b-0 md:border-r">
         {(
           [
             ["overview", "Overview"],
             ["vehicles", "Vehicles"],
             ["roads", "Road reports"],
             ["logs", "Logs"],
+            ["eval", "Evaluator"],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -38,7 +39,7 @@ export function AdminPage() {
             onClick={() => setTab(id)}
             className={cn(
               "rounded-sm px-3 py-2 text-left text-[13px]",
-              tab === id ? "bg-ink-800 text-paper" : "text-ash-400 hover:text-paper",
+              tab === id ? "bg-soft text-ink" : "text-muted hover:text-ink",
             )}
           >
             {label}
@@ -50,6 +51,7 @@ export function AdminPage() {
         {tab === "vehicles" && <VehiclesAdmin />}
         {tab === "roads" && <RoadsAdmin />}
         {tab === "logs" && <LogsAdmin />}
+        {tab === "eval" && <EvalAdmin />}
       </div>
     </div>
   );
@@ -64,7 +66,7 @@ function Overview() {
   return (
     <div className="mx-auto max-w-4xl">
       <h1 className="text-xl font-semibold">Operations</h1>
-      <p className="mt-1 text-[13px] text-ash-400">
+      <p className="mt-1 text-[13px] text-muted">
         Live counts from the dispatch database. Demo requests are labelled separately
         from Google Routes.
       </p>
@@ -84,8 +86,8 @@ function Overview() {
 
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="border border-ink-700 bg-ink-900 px-3 py-3">
-      <div className="text-[10px] uppercase tracking-[0.14em] text-ash-400">{label}</div>
+    <div className="rounded-xl border border-line bg-white px-3 py-3">
+      <div className="text-[11px] text-muted">{label}</div>
       <div className="mt-1 font-mono text-2xl tabular">{value}</div>
     </div>
   );
@@ -130,18 +132,23 @@ function VehiclesAdmin() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["vehicles"] }),
   });
 
+  const remove = useMutation({
+    mutationFn: (id: string) => api(`/vehicles/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["vehicles"] }),
+  });
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Fleet</h1>
-        <p className="mt-1 text-[13px] text-ash-400">
+        <p className="mt-1 text-[13px] text-muted">
           Availability is operational state, not live GPS. Assigned units cannot be
           marked available until the journey completes.
         </p>
       </div>
-      <div className="overflow-x-auto border border-ink-700">
+      <div className="overflow-x-auto border border-line">
         <table className="w-full text-left text-[13px]">
-          <thead className="bg-ink-900 text-[10px] uppercase tracking-[0.14em] text-ash-400">
+          <thead className="bg-white text-[10px] uppercase tracking-[0.14em] text-muted">
             <tr>
               <th className="px-3 py-2">Call sign</th>
               <th className="px-3 py-2">Type</th>
@@ -152,16 +159,16 @@ function VehiclesAdmin() {
           </thead>
           <tbody>
             {list.data?.vehicles.map((vehicle) => (
-              <tr key={vehicle.id} className="border-t border-ink-800">
+              <tr key={vehicle.id} className="border-t border-line">
                 <td className="px-3 py-2 font-mono">{vehicle.callSign}</td>
                 <td className="px-3 py-2">{vehicle.type}</td>
-                <td className="px-3 py-2 text-ash-300">{vehicle.locationLabel}</td>
+                <td className="px-3 py-2 text-muted">{vehicle.locationLabel}</td>
                 <td className="px-3 py-2">
                   <StatusChip tone={vehicleTone(vehicle.status)}>
                     {vehicleStatusLabel(vehicle.status)}
                   </StatusChip>
                 </td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right space-x-3">
                   {vehicle.status !== "ASSIGNED" && (
                     <button
                       className="text-[12px] text-brass"
@@ -173,6 +180,14 @@ function VehiclesAdmin() {
                       }
                     >
                       {vehicle.status === "INACTIVE" ? "Activate" : "Deactivate"}
+                    </button>
+                  )}
+                  {vehicle.status !== "ASSIGNED" && (
+                    <button
+                      className="text-[12px] text-red-300"
+                      onClick={() => remove.mutate(vehicle.id)}
+                    >
+                      Delete
                     </button>
                   )}
                 </td>
@@ -245,7 +260,7 @@ function RoadsAdmin() {
   });
   const [draft, setDraft] = useState({
     title: "",
-    corridorId: "MARINE_DRIVE",
+    corridorId: "SION_LINK",
     status: "CONGESTED" as RoadStatus,
   });
 
@@ -273,11 +288,19 @@ function RoadsAdmin() {
     },
   });
 
+  const remove = useMutation({
+    mutationFn: (id: string) => api(`/road-conditions/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["roads-all"] });
+      qc.invalidateQueries({ queryKey: ["roads"] });
+    },
+  });
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
         <h1 className="text-xl font-semibold">Road reports</h1>
-        <p className="mt-1 text-[13px] text-ash-400">
+        <p className="mt-1 text-[13px] text-muted">
           Local operational input. Seeded corridors are labelled DEMO SIMULATION and
           are not municipal live feeds.
         </p>
@@ -286,23 +309,29 @@ function RoadsAdmin() {
         {list.data?.roadConditions.map((condition) => (
           <div
             key={condition.id}
-            className="flex flex-wrap items-center justify-between gap-3 border border-ink-700 bg-ink-900 px-3 py-3"
+            className="flex flex-wrap items-center justify-between gap-3 border border-line bg-white px-3 py-3"
           >
             <div>
               <div className="text-[13px]">{condition.title}</div>
-              <div className="font-mono text-[11px] text-ash-400">{condition.corridorId}</div>
+              <div className="font-mono text-[11px] text-muted">{condition.corridorId}</div>
             </div>
             <div className="flex items-center gap-2">
               <StatusChip tone={roadTone(condition.status)}>{roadLabel(condition.status)}</StatusChip>
               {(["CLEAR", "CONGESTED", "BLOCKED"] as const).map((status) => (
                 <button
                   key={status}
-                  className="text-[11px] uppercase tracking-[0.12em] text-ash-400 hover:text-paper"
+                  className="text-[11px] uppercase tracking-[0.12em] text-muted hover:text-ink"
                   onClick={() => patch.mutate({ id: condition.id, status })}
                 >
                   {status}
                 </button>
               ))}
+              <button
+                className="text-[11px] uppercase tracking-[0.12em] text-red-300"
+                onClick={() => remove.mutate(condition.id)}
+              >
+                Delete
+              </button>
             </div>
           </div>
         ))}
@@ -372,15 +401,15 @@ function LogsAdmin() {
     <div className="mx-auto max-w-5xl space-y-8">
       <div>
         <h1 className="text-xl font-semibold">Logs</h1>
-        <p className="mt-1 text-[13px] text-ash-400">
+        <p className="mt-1 text-[13px] text-muted">
           Every provider request and selection is stored with its score breakdown.
         </p>
       </div>
       <section>
-        <h2 className="text-[10px] uppercase tracking-[0.16em] text-ash-400">Route requests</h2>
-        <div className="mt-2 overflow-x-auto border border-ink-700">
+        <h2 className="text-[10px] uppercase tracking-[0.16em] text-muted">Route requests</h2>
+        <div className="mt-2 overflow-x-auto border border-line">
           <table className="w-full text-left text-[13px]">
-            <thead className="bg-ink-900 text-[10px] uppercase tracking-[0.14em] text-ash-400">
+            <thead className="bg-white text-[10px] uppercase tracking-[0.14em] text-muted">
               <tr>
                 <th className="px-3 py-2">When</th>
                 <th className="px-3 py-2">Incident</th>
@@ -391,8 +420,8 @@ function LogsAdmin() {
             </thead>
             <tbody>
               {routes.data?.routeRequests.map((row) => (
-                <tr key={row.id} className="border-t border-ink-800">
-                  <td className="px-3 py-2 font-mono text-[12px] text-ash-300">
+                <tr key={row.id} className="border-t border-line">
+                  <td className="px-3 py-2 font-mono text-[12px] text-muted">
                     {new Date(row.requestedAt).toLocaleString()}
                   </td>
                   <td className="px-3 py-2">{row.emergencyCode}</td>
@@ -408,10 +437,10 @@ function LogsAdmin() {
         </div>
       </section>
       <section>
-        <h2 className="text-[10px] uppercase tracking-[0.16em] text-ash-400">Emergencies</h2>
-        <div className="mt-2 overflow-x-auto border border-ink-700">
+        <h2 className="text-[10px] uppercase tracking-[0.16em] text-muted">Emergencies</h2>
+        <div className="mt-2 overflow-x-auto border border-line">
           <table className="w-full text-left text-[13px]">
-            <thead className="bg-ink-900 text-[10px] uppercase tracking-[0.14em] text-ash-400">
+            <thead className="bg-white text-[10px] uppercase tracking-[0.14em] text-muted">
               <tr>
                 <th className="px-3 py-2">Code</th>
                 <th className="px-3 py-2">Priority</th>
@@ -422,11 +451,11 @@ function LogsAdmin() {
             </thead>
             <tbody>
               {emergencies.data?.emergencies.map((row) => (
-                <tr key={row.id} className="border-t border-ink-800">
+                <tr key={row.id} className="border-t border-line">
                   <td className="px-3 py-2 font-mono">{row.code}</td>
                   <td className="px-3 py-2">{row.priority}</td>
                   <td className="px-3 py-2">{row.status}</td>
-                  <td className="px-3 py-2 text-ash-300">{row.originLabel}</td>
+                  <td className="px-3 py-2 text-muted">{row.originLabel}</td>
                   <td className="px-3 py-2">{row.journeyStatus ?? "—"}</td>
                 </tr>
               ))}
@@ -434,6 +463,53 @@ function LogsAdmin() {
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+type EvalResult = {
+  noSuitableRoute: boolean;
+  message: string;
+  recommended: { label: string; trafficLevel: string; roadStatus: string; etaSeconds: number } | null;
+  candidates: Array<{ label: string; trafficLevel: string; roadStatus: string; blocked: boolean; score: number | null }>;
+};
+
+function EvalAdmin() {
+  const scenarios = useQuery({
+    queryKey: ["eval-scenarios"],
+    queryFn: () =>
+      api<{
+        scenarios: Array<{ id: string; result: EvalResult }>;
+      }>("/eval/scenarios"),
+  });
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-5">
+      <div>
+        <h1 className="text-xl font-semibold">Evaluator scenarios</h1>
+        <p className="mt-1 text-[13px] text-muted">
+          Mandatory input columns: vehicle_id, vehicle_type, emergency_type,
+          current_location, destination, latitude, longitude, traffic_level,
+          road_status, road_distance, estimated_travel_time, timestamp.
+        </p>
+      </div>
+      {scenarios.data?.scenarios.map((scenario) => (
+        <div key={scenario.id} className="rounded-xl border border-line bg-white px-4 py-3">
+          <div className="font-medium">{scenario.id.replaceAll("_", " ")}</div>
+          <p className="mt-1 text-[13px] text-muted">{scenario.result.message}</p>
+          {scenario.result.noSuitableRoute ? (
+            <p className="mt-2 text-[13px] font-medium text-critical">
+              No suitable route available
+            </p>
+          ) : (
+            <p className="mt-2 text-[13px]">
+              Selected {scenario.result.recommended?.label} ·{" "}
+              {scenario.result.recommended?.trafficLevel} traffic ·{" "}
+              {scenario.result.recommended?.roadStatus}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 export type Role = "ADMIN" | "DISPATCHER";
 export type Priority = "CRITICAL" | "HIGH" | "STANDARD";
+export type IncidentType = "MEDICAL" | "TRAUMA" | "FIRE" | "POLICE";
 export type EmergencyStatus = "OPEN" | "ASSIGNED" | "DISPATCHED" | "COMPLETED" | "CANCELLED";
 export type VehicleStatus = "AVAILABLE" | "ASSIGNED" | "INACTIVE";
 export type VehicleType = "AMBULANCE" | "FIRE" | "POLICE";
@@ -25,11 +26,15 @@ export type Vehicle = {
   capabilities: Record<string, unknown>;
   assignedEmergencyId: string | null;
   distanceMeters?: number;
+  reason?: string;
+  recommended?: boolean;
+  rank?: number;
 };
 
 export type Emergency = {
   id: string;
   code: string;
+  incidentType?: IncidentType;
   priority: Priority;
   status: EmergencyStatus;
   originLabel: string;
@@ -61,6 +66,10 @@ export type Candidate = {
     distancePenalty: number;
     trafficPenalty: number;
     roadPenalty: number;
+    travelTimeScore?: number;
+    distanceScore?: number;
+    trafficScore?: number;
+    roadStatusScore?: number;
     score: number | null;
     eligible: boolean;
     ineligibilityReason: string | null;
@@ -71,6 +80,8 @@ export type Explanation = {
   weights: { eta: number; distance: number; traffic: number; road: number };
   winnerLabel: string | null;
   summary: string;
+  reason?: string;
+  emergencyPriority?: Priority;
   factors: string[];
   excluded: Array<{ label: string; reason: string }>;
   components: {
@@ -78,6 +89,10 @@ export type Explanation = {
     distancePenalty: number;
     trafficPenalty: number;
     roadPenalty: number;
+    travelTimeScore?: number;
+    distanceScore?: number;
+    trafficScore?: number;
+    roadStatusScore?: number;
     score: number;
   } | null;
 };
@@ -117,6 +132,10 @@ export type Journey = {
   lastLat: number;
   lastLng: number;
   progress: number;
+  remainingMeters?: number;
+  remainingSeconds?: number;
+  currentRouteLabel?: string;
+  simulatedPosition?: boolean;
 };
 
 export type RouteEvent = {

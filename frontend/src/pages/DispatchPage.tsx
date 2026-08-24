@@ -1,25 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
+import { ChevronDown, MapPin, Menu, Play, X } from "lucide-react";
 import { api, ApiError } from "../lib/api";
-import { MUMBAI_DEMO, formatEtaClock, formatWhen, type LatLng } from "../lib/geo";
-import { DEMO_PRESETS, priorityLabel, roadLabel, trafficLabel } from "../lib/labels";
 import {
-  Button,
-  Field,
-  inputClass,
-  Panel,
-  StatusChip,
-  priorityTone,
-  roadTone,
-  trafficTone,
-  vehicleTone,
-} from "../components/ui";
+  DEMO_CORRIDORS,
+  MUMBAI_DEMO,
+  MUMBAI_HOSPITALS,
+  MUMBAI_ORIGINS,
+  formatEtaClock,
+  formatWhen,
+  type LatLng,
+} from "../lib/geo";
+import { DEMO_PRESETS, roadLabel, trafficLabel } from "../lib/labels";
+import { displayScore, factorScore, incidentTitle, priorityShort, timeAgo } from "../lib/format";
+import { Button, Field, inputClass, StatusChip, roadTone, trafficTone } from "../components/ui";
 import { DispatchMap } from "../components/map/DispatchMap";
 import type {
   Candidate,
   Emergency,
   Explanation,
+  IncidentType,
   JourneyDetail,
   Priority,
   RoadCondition,
@@ -38,6 +39,7 @@ type EmergencyDetail = {
 };
 
 const emptyForm = {
+  incidentType: "MEDICAL" as IncidentType,
   priority: "CRITICAL" as Priority,
   originLabel: "",
   originLat: "",
@@ -53,35 +55,34 @@ export function DispatchPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(true);
   const [form, setForm] = useState(emptyForm);
-  const [pinMode, setPinMode] = useState<"origin" | "destination" | null>("origin");
+  const [pinMode, setPinMode] = useState<"origin" | "destination" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rerouteNotice, setRerouteNotice] = useState<RerouteResult | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
+  const [whyOpen, setWhyOpen] = useState(true);
+  const [blockCorridor, setBlockCorridor] = useState(MUMBAI_DEMO.blockCorridorId);
 
   const emergencies = useQuery({
     queryKey: ["emergencies"],
     queryFn: () => api<{ emergencies: Emergency[] }>("/emergencies"),
     refetchInterval: 8000,
   });
-
   const vehicles = useQuery({
     queryKey: ["vehicles"],
     queryFn: () => api<{ vehicles: Vehicle[] }>("/vehicles"),
     refetchInterval: 8000,
   });
-
   const roads = useQuery({
     queryKey: ["roads"],
     queryFn: () => api<{ roadConditions: RoadCondition[] }>("/road-conditions?active=true"),
     refetchInterval: 8000,
   });
-
   const detail = useQuery({
     queryKey: ["emergency", selectedId],
     enabled: Boolean(selectedId),
     queryFn: () => api<EmergencyDetail>(`/emergencies/${selectedId}`),
   });
-
   const journeyId = detail.data?.journeyId ?? null;
   const journey = useQuery({
     queryKey: ["journey", journeyId],
@@ -100,7 +101,7 @@ export function DispatchPage() {
         });
         qc.setQueryData(["journey", journeyId], next);
       } catch {
-        /* journey may have completed */
+        /* completed */
       }
     }, 2000);
     return () => clearInterval(timer);
@@ -111,6 +112,7 @@ export function DispatchPage() {
       api<{ emergency: Emergency }>("/emergencies", {
         method: "POST",
         body: JSON.stringify({
+          incidentType: form.incidentType,
           priority: form.priority,
           originLabel: form.originLabel,
           originLat: Number(form.originLat),
@@ -125,6 +127,7 @@ export function DispatchPage() {
       setSelectedId(data.emergency.id);
       setCreating(false);
       setError(null);
+      setRightOpen(true);
       qc.invalidateQueries({ queryKey: ["emergencies"] });
     },
     onError: (err) => setError(err instanceof ApiError ? err.message : "Create failed"),
@@ -144,11 +147,19 @@ export function DispatchPage() {
   });
 
   const calculateRoutes = useMutation({
-    mutationFn: () =>
-      api<RouteRequest & { explanation: Explanation; noEligibleRoute: boolean }>(
+    mutationFn: async () => {
+      if (selectedId && !detail.data?.emergency.vehicle) {
+        await api(`/emergencies/${selectedId}/assign-vehicle`, {
+          method: "POST",
+          body: JSON.stringify({}),
+        });
+        await qc.invalidateQueries({ queryKey: ["emergency", selectedId] });
+      }
+      return api<RouteRequest & { explanation: Explanation; noEligibleRoute: boolean }>(
         `/emergencies/${selectedId}/routes`,
         { method: "POST", body: JSON.stringify({}) },
-      ),
+      );
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["emergency", selectedId] }),
     onError: (err) => setError(err instanceof ApiError ? err.message : "Routing failed"),
   });
@@ -177,13 +188,9 @@ export function DispatchPage() {
 
   const demoScenario = useMutation({
     mutationFn: (status: RoadStatus) =>
-      api<{ reroute: RerouteResult }>(`/demo/road-scenario`, {
+      api<{ reroute: RerouteResult }>("/demo/road-scenario", {
         method: "POST",
-        body: JSON.stringify({
-          status,
-          corridorId: "MARINE_DRIVE",
-          journeyId,
-        }),
+        body: JSON.stringify({ status, corridorId: blockCorridor, journeyId }),
       }),
     onSuccess: (data) => {
       setRerouteNotice(data.reroute);
@@ -198,8 +205,9 @@ export function DispatchPage() {
   const routeRequest = journey.data?.routeRequest ?? detail.data?.latestRouteRequest ?? null;
   const selectedCandidateId = routeRequest?.selection?.candidateId ?? null;
   const explanation =
-    (routeRequest?.selection?.reason as Explanation | undefined) ??
-    calculateRoutes.data?.explanation;
+    (routeRequest?.selection?.reason as Explanation | undefined) ?? calculateRoutes.data?.explanation;
+  const recommended = routeRequest?.candidates.find((c) => c.id === selectedCandidateId) ?? null;
+  const alternatives = (routeRequest?.candidates ?? []).filter((c) => c.id !== selectedCandidateId);
 
   const mapOrigin = emergency
     ? { lat: emergency.originLat, lng: emergency.originLng, label: emergency.originLabel }
@@ -219,7 +227,6 @@ export function DispatchPage() {
           label: form.destinationLabel,
         }
       : undefined;
-
   const vehiclePosition = journey.data
     ? { lat: journey.data.journey.lastLat, lng: journey.data.journey.lastLng }
     : emergency?.vehicle
@@ -228,9 +235,18 @@ export function DispatchPage() {
 
   const queue = emergencies.data?.emergencies ?? [];
 
+  function startNew() {
+    setCreating(true);
+    setSelectedId(null);
+    setError(null);
+    setRightOpen(true);
+    setForm(emptyForm);
+  }
+
   function applyDemoPreset() {
     setForm({
-      priority: "CRITICAL",
+      incidentType: MUMBAI_DEMO.incidentType,
+      priority: MUMBAI_DEMO.priority,
       originLabel: MUMBAI_DEMO.originLabel,
       originLat: String(MUMBAI_DEMO.originLat),
       originLng: String(MUMBAI_DEMO.originLng),
@@ -242,6 +258,7 @@ export function DispatchPage() {
     setCreating(true);
     setSelectedId(null);
     setPinMode(null);
+    setRightOpen(true);
   }
 
   function onMapClick(point: LatLng) {
@@ -268,54 +285,32 @@ export function DispatchPage() {
   const mapVehicles = useMemo(() => vehicles.data?.vehicles ?? [], [vehicles.data]);
 
   return (
-    <div className="flex h-full flex-col lg:flex-row">
-      <aside className="hidden w-56 shrink-0 flex-col border-r border-ink-700 bg-ink-900 lg:flex">
-        <div className="flex items-center justify-between px-3 py-3">
-          <span className="text-[10px] uppercase tracking-[0.16em] text-ash-400">Incidents</span>
-          <button
-            className="text-[11px] text-brass hover:text-paper"
-            onClick={() => {
-              setCreating(true);
-              setSelectedId(null);
-              setError(null);
-            }}
+    <div className="flex h-full bg-soft">
+      <AnimatePresence initial={false}>
+        {leftOpen && (
+          <motion.aside
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 288, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="hidden h-full shrink-0 overflow-hidden border-r border-line bg-white lg:block"
           >
-            New
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {queue.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                setSelectedId(item.id);
+            <IncidentList
+              queue={queue}
+              selectedId={selectedId}
+              onSelect={(id) => {
+                setSelectedId(id);
                 setCreating(false);
                 setRerouteNotice(null);
+                setRightOpen(true);
               }}
-              className={cn(
-                "block w-full border-b border-ink-800 px-3 py-2.5 text-left",
-                selectedId === item.id ? "bg-ink-800" : "hover:bg-ink-800/50",
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[12px]">{item.code}</span>
-                <StatusChip tone={priorityTone(item.priority)}>
-                  {priorityLabel(item.priority)}
-                </StatusChip>
-              </div>
-              <div className="mt-1 truncate text-[12px] text-ash-300">{item.originLabel}</div>
-              <div className="mt-0.5 text-[10px] uppercase tracking-[0.12em] text-ash-400">
-                {item.status.toLowerCase()}
-              </div>
-            </button>
-          ))}
-          {queue.length === 0 && (
-            <p className="px-3 py-6 text-[12px] text-ash-400">No incidents yet.</p>
-          )}
-        </div>
-      </aside>
+              onNew={startNew}
+            />
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
-      <main className="relative min-h-[46vh] flex-1 lg:min-h-0">
+      <main className="relative min-h-0 min-w-0 flex-1">
         <DispatchMap
           vehicles={mapVehicles}
           origin={mapOrigin}
@@ -326,7 +321,31 @@ export function DispatchPage() {
           roadConditions={roads.data?.roadConditions}
           onMapClick={onMapClick}
         />
-        <Legend />
+
+        <button
+          className="absolute left-3 top-3 z-20 hidden h-9 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] shadow-sm lg:flex"
+          onClick={() => setLeftOpen((v) => !v)}
+        >
+          <Menu size={15} />
+          Incidents
+          <span className="rounded-full bg-critical px-1.5 text-[11px] font-medium text-white">
+            {queue.length}
+          </span>
+        </button>
+
+        <button
+          className="absolute right-3 top-3 z-20 lg:hidden rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] shadow-sm"
+          onClick={() => setRightOpen((v) => !v)}
+        >
+          {rightOpen ? "Hide details" : "Details"}
+        </button>
+
+        {journey.data?.journey.status === "ACTIVE" && (
+          <div className="absolute left-3 top-14 z-20 rounded-md border border-line bg-white px-2 py-1 text-[11px] text-muted shadow-sm">
+            Simulated vehicle position
+          </div>
+        )}
+
         <AnimatePresence>
           {rerouteNotice && (
             <motion.div
@@ -334,20 +353,22 @@ export function DispatchPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.35 }}
-              className="absolute left-3 right-3 top-3 z-10 rounded-sm border border-warning/50 bg-ink-900/95 p-3 shadow-lg md:left-4 md:right-auto md:max-w-md"
+              className="absolute left-1/2 top-3 z-30 w-[min(420px,calc(100%-24px))] -translate-x-1/2 rounded-xl border border-amber-200 bg-white p-3 shadow-md"
             >
-              <div className="text-[10px] uppercase tracking-[0.16em] text-warning">
-                Route change
-              </div>
-              <p className="mt-1 text-[13px] leading-snug">{rerouteNotice.reason}</p>
+              <div className="text-[12px] font-semibold text-amber-700">Route updated</div>
+              <p className="mt-1 text-[13px] text-ink">
+                {rerouteNotice.adopted
+                  ? "Road blockage detected. RapidRoute selected an alternate route."
+                  : rerouteNotice.reason}
+              </p>
               {rerouteNotice.adopted && (
-                <p className="mt-1 font-mono text-[12px] text-ash-300">
+                <p className="mt-1 text-[12px] text-muted">
                   ETA {Math.round((rerouteNotice.previousEtaSeconds ?? 0) / 60)} min →{" "}
                   {Math.round((rerouteNotice.newEtaSeconds ?? 0) / 60)} min
                 </p>
               )}
               <button
-                className="mt-2 text-[11px] uppercase tracking-[0.14em] text-brass"
+                className="mt-2 text-[12px] font-medium text-nav"
                 onClick={() => setRerouteNotice(null)}
               >
                 Acknowledge
@@ -355,524 +376,595 @@ export function DispatchPage() {
             </motion.div>
           )}
         </AnimatePresence>
-        <button
-          className="absolute bottom-3 right-3 z-10 rounded-sm border border-ink-600 bg-ink-900 px-2 py-1 text-[11px] uppercase tracking-[0.14em] text-ash-300 lg:hidden"
-          onClick={() => setPanelOpen((v) => !v)}
-        >
-          {panelOpen ? "Hide panel" : "Show panel"}
-        </button>
+
+        {routeRequest && explanation && !creating && (
+          <WhyCard
+            explanation={explanation}
+            recommended={recommended}
+            open={whyOpen}
+            onToggle={() => setWhyOpen((v) => !v)}
+          />
+        )}
       </main>
 
-      <aside
-        className={cn(
-          "flex w-full shrink-0 flex-col border-t border-ink-700 bg-ink-900 lg:h-full lg:w-[380px] lg:border-l lg:border-t-0",
-          !panelOpen && "hidden lg:flex",
-        )}
-      >
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="border-b border-ink-700 px-4 py-2 lg:hidden">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-[0.16em] text-ash-400">Incident</span>
-              <button
-                className="text-[11px] text-brass"
-                onClick={() => {
-                  setCreating(true);
-                  setSelectedId(null);
-                }}
-              >
-                New
+      <AnimatePresence initial={false}>
+        {rightOpen && (
+          <motion.aside
+            initial={{ x: 24, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 24, opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="absolute inset-x-0 bottom-0 z-20 max-h-[58%] overflow-y-auto rounded-t-2xl border-t border-line bg-white shadow-[0_-8px_24px_rgba(60,64,67,0.12)] lg:static lg:z-0 lg:h-full lg:w-[360px] lg:max-h-none lg:shrink-0 lg:rounded-none lg:border-l lg:border-t-0 lg:shadow-none"
+          >
+            <div className="flex items-center justify-between border-b border-line px-5 py-3 lg:hidden">
+              <span className="text-[13px] font-medium">Dispatch</span>
+              <button onClick={() => setRightOpen(false)}>
+                <X size={16} />
               </button>
             </div>
-            <select
-              className={cn(inputClass(), "mt-2")}
-              value={selectedId ?? ""}
-              onChange={(e) => {
-                if (!e.target.value) return;
-                setSelectedId(e.target.value);
-                setCreating(false);
-              }}
-            >
-              <option value="">Select an incident</option>
-              {queue.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.code} · {item.status}
-                </option>
-              ))}
-            </select>
-          </div>
-          {error && (
-            <div className="border-b border-critical/40 bg-critical-soft px-4 py-2 text-[12px] text-red-200">
-              {error}
+
+            <div className="border-b border-line px-4 py-3 lg:hidden">
+              <select
+                className={inputClass()}
+                value={selectedId ?? ""}
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  setSelectedId(e.target.value);
+                  setCreating(false);
+                }}
+              >
+                <option value="">Incidents</option>
+                {queue.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.code} · {item.status}
+                  </option>
+                ))}
+              </select>
             </div>
-          )}
 
-          {creating && (
-            <CreateForm
-              form={form}
-              setForm={setForm}
-              pinMode={pinMode}
-              setPinMode={setPinMode}
-              onDemo={applyDemoPreset}
-              pending={createEmergency.isPending}
-              onSubmit={() => createEmergency.mutate()}
-            />
-          )}
+            {error && <div className="bg-red-50 px-5 py-2 text-[13px] text-critical">{error}</div>}
 
-          {!creating && emergency && (
-            <>
-              <Panel title="Incident">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-mono text-[15px]">{emergency.code}</div>
-                    <div className="mt-1 text-[12px] leading-snug text-ash-300">
-                      {emergency.originLabel} → {emergency.destinationLabel}
-                    </div>
-                  </div>
-                  <StatusChip tone={priorityTone(emergency.priority)}>
-                    {priorityLabel(emergency.priority)}
-                  </StatusChip>
-                </div>
-              </Panel>
+            {creating && (
+              <NewEmergencyForm
+                form={form}
+                setForm={setForm}
+                pinMode={pinMode}
+                setPinMode={setPinMode}
+                pending={createEmergency.isPending}
+                onDemo={applyDemoPreset}
+                onSubmit={() => {
+                  if (!form.originLat || !form.destinationLat) {
+                    setError("Origin and destination are required");
+                    return;
+                  }
+                  createEmergency.mutate();
+                }}
+              />
+            )}
 
-              <Panel title="Vehicle">
-                {emergency.vehicle ? (
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-[14px]">{emergency.vehicle.callSign}</div>
-                      <div className="text-[12px] text-ash-400">
-                        {emergency.vehicle.locationLabel}
-                      </div>
-                    </div>
-                    <StatusChip tone={vehicleTone(emergency.vehicle.status)}>
-                      {emergency.vehicle.status.toLowerCase()}
-                    </StatusChip>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Button
-                      className="w-full"
-                      onClick={() => assignVehicle.mutate(undefined)}
-                      disabled={assignVehicle.isPending}
-                    >
-                      Assign nearest available
-                    </Button>
-                    {(detail.data?.recommendedVehicles ?? []).slice(0, 4).map((vehicle) => (
-                      <button
-                        key={vehicle.id}
-                        onClick={() => assignVehicle.mutate(vehicle.id)}
-                        className="flex w-full items-center justify-between rounded-sm border border-ink-700 px-2.5 py-2 text-left hover:border-ash-400"
-                      >
-                        <span>
-                          <span className="block text-[13px]">{vehicle.callSign}</span>
-                          <span className="text-[11px] text-ash-400">{vehicle.locationLabel}</span>
-                        </span>
-                        <span className="font-mono text-[12px] text-ash-300">
-                          {(vehicle.distanceMeters / 1000).toFixed(1)} km
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </Panel>
-
-              {emergency.vehicle && !routeRequest && emergency.status !== "DISPATCHED" && (
-                <Panel title="Routing">
-                  <Button
-                    className="w-full"
-                    onClick={() => calculateRoutes.mutate()}
-                    disabled={calculateRoutes.isPending}
-                  >
-                    {calculateRoutes.isPending ? "Calculating…" : "Calculate route"}
-                  </Button>
-                  <p className="mt-2 text-[11px] leading-relaxed text-ash-400">
-                    Google Routes candidates are requested from the server. If the
-                    provider is unavailable, RapidRoute uses labelled demo fixtures.
-                  </p>
-                </Panel>
-              )}
-
-              {routeRequest && (
-                <RouteCompare
-                  request={routeRequest}
-                  explanation={explanation}
-                  selectedId={selectedCandidateId}
-                  calculating={calculateRoutes.isPending}
-                  onSelect={(id) => selectRoute.mutate(id)}
-                  onRecalculate={() => calculateRoutes.mutate()}
-                />
-              )}
-
-              {routeRequest && emergency.status !== "DISPATCHED" && emergency.status !== "COMPLETED" && (
-                <Panel>
-                  <Button
-                    className="w-full"
-                    disabled={!routeRequest.selection || dispatch.isPending}
-                    onClick={() => dispatch.mutate(undefined)}
-                  >
-                    Dispatch recommended route
-                  </Button>
-                </Panel>
-              )}
-
-              {journey.data && (
-                <JourneyBlock
-                  detail={journey.data}
-                  onScenario={(status) => demoScenario.mutate(status)}
-                  pending={demoScenario.isPending}
-                />
-              )}
-            </>
-          )}
-        </div>
-      </aside>
+            {!creating && emergency && (
+              <ContextPanel
+                emergency={emergency}
+                recommendedVehicles={detail.data?.recommendedVehicles ?? []}
+                routeRequest={routeRequest}
+                recommended={recommended}
+                alternatives={alternatives}
+                explanation={explanation}
+                journey={journey.data}
+                calculating={calculateRoutes.isPending}
+                dispatching={dispatch.isPending}
+                corridorId={blockCorridor}
+                onCorridorChange={setBlockCorridor}
+                onAssign={(id) => assignVehicle.mutate(id)}
+                onCalculate={() => calculateRoutes.mutate()}
+                onSelect={(id) => selectRoute.mutate(id)}
+                onStart={() => dispatch.mutate(undefined)}
+                onScenario={(status) => demoScenario.mutate(status)}
+                scenarioPending={demoScenario.isPending}
+              />
+            )}
+          </motion.aside>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function CreateForm({
+function IncidentList({
+  queue,
+  selectedId,
+  onSelect,
+  onNew,
+}: {
+  queue: Emergency[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+}) {
+  return (
+    <div className="flex h-full w-72 flex-col">
+      <div className="flex items-center justify-between px-4 py-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[16px] font-semibold">Incidents</h2>
+          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-critical px-1.5 text-[11px] font-medium text-white">
+            {queue.length}
+          </span>
+        </div>
+        <button className="text-[13px] font-medium text-nav" onClick={onNew}>
+          New
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+        {queue.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onSelect(item.id)}
+            className={cn(
+              "mb-2 w-full rounded-xl border bg-white px-3 py-2.5 text-left",
+              selectedId === item.id ? "border-slate-300 shadow-sm" : "border-line hover:border-slate-300",
+              item.priority === "CRITICAL" && "border-l-[3px] border-l-critical",
+              item.priority === "HIGH" && "border-l-[3px] border-l-amber-500",
+              item.priority === "STANDARD" && "border-l-[3px] border-l-slate-300",
+            )}
+          >
+            <div
+              className={cn(
+                "text-[10px] font-semibold tracking-wide",
+                item.priority === "CRITICAL" && "text-critical",
+                item.priority === "HIGH" && "text-amber-600",
+                item.priority === "STANDARD" && "text-slate-500",
+              )}
+            >
+              {priorityShort(item.priority).toUpperCase()}
+            </div>
+            <div className="mt-0.5 text-[13px] font-medium">{incidentTitle(item.incidentType, item.notes)}</div>
+            <div className="mt-0.5 text-[12px] text-muted">{item.originLabel}</div>
+            <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+              <span>{timeAgo(item.createdAt)}</span>
+              <span className="font-mono">{item.code}</span>
+            </div>
+          </button>
+        ))}
+        {queue.length === 0 && <p className="px-1 py-8 text-[13px] text-muted">No incidents yet.</p>}
+      </div>
+    </div>
+  );
+}
+
+function NewEmergencyForm({
   form,
   setForm,
   pinMode,
   setPinMode,
-  onDemo,
   pending,
+  onDemo,
   onSubmit,
 }: {
   form: typeof emptyForm;
   setForm: (next: typeof emptyForm | ((f: typeof emptyForm) => typeof emptyForm)) => void;
   pinMode: "origin" | "destination" | null;
   setPinMode: (mode: "origin" | "destination" | null) => void;
-  onDemo: () => void;
   pending: boolean;
+  onDemo: () => void;
   onSubmit: () => void;
 }) {
   return (
-    <Panel
-      title="New incident"
-      action={
-        <button className="text-[11px] text-brass" onClick={onDemo}>
-          Load Mumbai demo
+    <div>
+      <div className="flex items-center justify-between px-5 pt-5">
+        <h2 className="text-[18px] font-semibold">New Emergency</h2>
+        <button className="text-[12px] font-medium text-nav" onClick={onDemo}>
+          Mumbai demo
         </button>
-      }
-    >
-      <div className="space-y-3">
+      </div>
+      <div className="space-y-3 px-5 py-4">
+        <Field label="Emergency Type">
+          <select
+            className={inputClass()}
+            value={form.incidentType}
+            onChange={(e) => setForm((f) => ({ ...f, incidentType: e.target.value as IncidentType }))}
+          >
+            <option value="MEDICAL">Medical</option>
+            <option value="TRAUMA">Trauma</option>
+            <option value="FIRE">Fire</option>
+            <option value="POLICE">Police</option>
+          </select>
+        </Field>
         <Field label="Priority">
           <select
             className={inputClass()}
             value={form.priority}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, priority: e.target.value as Priority }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as Priority }))}
           >
             <option value="CRITICAL">Critical</option>
             <option value="HIGH">High</option>
-            <option value="STANDARD">Standard</option>
+            <option value="STANDARD">Medium</option>
           </select>
         </Field>
         <Field label="Origin">
-          <input
+          <select
             className={inputClass()}
-            value={form.originLabel}
-            onChange={(e) => setForm((f) => ({ ...f, originLabel: e.target.value }))}
-          />
+            value=""
+            onChange={(e) => {
+              const place = MUMBAI_ORIGINS.find((p) => p.id === e.target.value);
+              if (!place) return;
+              setForm((f) => ({
+                ...f,
+                originLabel: place.label,
+                originLat: String(place.lat),
+                originLng: String(place.lng),
+              }));
+            }}
+          >
+            <option value="">{form.originLabel || "Select origin"}</option>
+            {MUMBAI_ORIGINS.map((place) => (
+              <option key={place.id} value={place.id}>
+                {place.label}
+              </option>
+            ))}
+          </select>
         </Field>
-        <div className="grid grid-cols-2 gap-2">
-          <input
+        <Field label="Destination">
+          <select
             className={inputClass()}
-            placeholder="Lat"
-            value={form.originLat}
-            onChange={(e) => setForm((f) => ({ ...f, originLat: e.target.value }))}
-          />
-          <input
-            className={inputClass()}
-            placeholder="Lng"
-            value={form.originLng}
-            onChange={(e) => setForm((f) => ({ ...f, originLng: e.target.value }))}
-          />
-        </div>
-        <Field label="Hospital / destination">
-          <input
-            className={inputClass()}
-            value={form.destinationLabel}
-            onChange={(e) => setForm((f) => ({ ...f, destinationLabel: e.target.value }))}
-          />
-        </Field>
-        <div className="grid grid-cols-2 gap-2">
-          <input
-            className={inputClass()}
-            placeholder="Lat"
-            value={form.destinationLat}
-            onChange={(e) => setForm((f) => ({ ...f, destinationLat: e.target.value }))}
-          />
-          <input
-            className={inputClass()}
-            placeholder="Lng"
-            value={form.destinationLng}
-            onChange={(e) => setForm((f) => ({ ...f, destinationLng: e.target.value }))}
-          />
-        </div>
-        <Field label="Notes">
-          <textarea
-            className={cn(inputClass(), "min-h-16")}
-            value={form.notes}
-            onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-          />
+            value=""
+            onChange={(e) => {
+              const place = MUMBAI_HOSPITALS.find((p) => p.id === e.target.value);
+              if (!place) return;
+              setForm((f) => ({
+                ...f,
+                destinationLabel: place.label,
+                destinationLat: String(place.lat),
+                destinationLng: String(place.lng),
+              }));
+            }}
+          >
+            <option value="">{form.destinationLabel || "Select hospital"}</option>
+            {MUMBAI_HOSPITALS.map((place) => (
+              <option key={place.id} value={place.id}>
+                {place.label}
+              </option>
+            ))}
+          </select>
         </Field>
         <div className="flex gap-2">
-          <Button
-            type="button"
-            variant={pinMode === "origin" ? "primary" : "ghost"}
-            className="flex-1"
-            onClick={() => setPinMode("origin")}
-          >
-            Pin origin
+          <Button type="button" variant={pinMode === "origin" ? "primary" : "ghost"} className="flex-1" onClick={() => setPinMode("origin")}>
+            <MapPin size={14} /> Pin origin
           </Button>
-          <Button
-            type="button"
-            variant={pinMode === "destination" ? "primary" : "ghost"}
-            className="flex-1"
-            onClick={() => setPinMode("destination")}
-          >
-            Pin hospital
+          <Button type="button" variant={pinMode === "destination" ? "primary" : "ghost"} className="flex-1" onClick={() => setPinMode("destination")}>
+            <MapPin size={14} /> Pin hospital
           </Button>
         </div>
         <Button className="w-full" disabled={pending} onClick={onSubmit}>
           {pending ? "Creating…" : "Create emergency"}
         </Button>
       </div>
-    </Panel>
+    </div>
   );
 }
 
-function RouteCompare({
-  request,
-  explanation,
-  selectedId,
-  calculating,
-  onSelect,
-  onRecalculate,
-}: {
-  request: RouteRequest;
-  explanation?: Explanation;
-  selectedId: string | null;
-  calculating: boolean;
-  onSelect: (id: string) => void;
-  onRecalculate: () => void;
-}) {
-  return (
-    <Panel
-      title="Candidates"
-      action={
-        <button className="text-[11px] text-ash-400" onClick={onRecalculate}>
-          Recalculate
-        </button>
-      }
-    >
-      <div className="mb-3 flex items-center justify-between">
-        <StatusChip tone={request.provider === "DEMO" ? "brass" : "clear"}>
-          {request.dataSourceLabel}
-        </StatusChip>
-      </div>
-      {request.providerMessage && (
-        <p className="mb-3 text-[11px] leading-relaxed text-ash-400">{request.providerMessage}</p>
-      )}
-      <div className="space-y-2">
-        <AnimatePresence>
-          {[...request.candidates]
-            .sort((a, b) => {
-              if (a.id === selectedId) return -1;
-              if (b.id === selectedId) return 1;
-              if (a.blocked !== b.blocked) return a.blocked ? 1 : -1;
-              return (a.score ?? 999) - (b.score ?? 999);
-            })
-            .map((candidate, index) => (
-            <motion.div
-              key={candidate.id}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.28, delay: index * 0.05 }}
-            >
-              <CandidateCard
-                candidate={candidate}
-                recommended={candidate.id === selectedId}
-                onSelect={() => !candidate.blocked && onSelect(candidate.id)}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
-      {calculating && (
-        <p className="mt-2 text-[12px] text-ash-400">Scoring candidates…</p>
-      )}
-      {explanation && (
-        <div className="mt-4 border-t border-ink-700 pt-3">
-          <div className="text-[10px] uppercase tracking-[0.16em] text-brass">Why this route?</div>
-          <p className="mt-1 text-[13px] leading-relaxed text-paper/90">{explanation.summary}</p>
-          <ul className="mt-2 space-y-1 text-[12px] text-ash-300">
-            {explanation.factors.map((factor) => (
-              <li key={factor}>— {factor}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-function CandidateCard({
-  candidate,
+function ContextPanel({
+  emergency,
+  recommendedVehicles,
+  routeRequest,
   recommended,
+  alternatives,
+  explanation: _explanation,
+  journey,
+  calculating,
+  dispatching,
+  corridorId,
+  onCorridorChange,
+  onAssign,
+  onCalculate,
   onSelect,
-}: {
-  candidate: Candidate;
-  recommended: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      onClick={onSelect}
-      disabled={candidate.blocked}
-      className={cn(
-        "w-full rounded-sm border px-3 py-2.5 text-left",
-        candidate.blocked && "border-critical/40 bg-critical-soft/40 opacity-80",
-        recommended && !candidate.blocked && "border-brass bg-ink-800",
-        !recommended && !candidate.blocked && "border-ink-700 hover:border-ash-400",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium">{candidate.label}</span>
-        {candidate.blocked ? (
-          <StatusChip tone="critical">Not eligible — blocked road</StatusChip>
-        ) : recommended ? (
-          <StatusChip tone="brass">Recommended</StatusChip>
-        ) : null}
-      </div>
-      <div className="mt-2 grid grid-cols-4 gap-2 font-mono text-[11px] text-ash-300">
-        <div>
-          <div className="text-[9px] uppercase tracking-[0.12em] text-ash-400">ETA</div>
-          {candidate.etaLabel}
-        </div>
-        <div>
-          <div className="text-[9px] uppercase tracking-[0.12em] text-ash-400">Dist</div>
-          {candidate.distanceLabel}
-        </div>
-        <div>
-          <div className="text-[9px] uppercase tracking-[0.12em] text-ash-400">Traffic</div>
-          <span className={cn(trafficTone(candidate.trafficLevel) === "critical" && "text-red-300")}>
-            {trafficLabel(candidate.trafficLevel)}
-          </span>
-        </div>
-        <div>
-          <div className="text-[9px] uppercase tracking-[0.12em] text-ash-400">Score</div>
-          {candidate.score ?? "—"}
-        </div>
-      </div>
-      <div className="mt-2">
-        <StatusChip tone={roadTone(candidate.roadImpact)}>
-          Road {roadLabel(candidate.roadImpact)}
-        </StatusChip>
-      </div>
-    </button>
-  );
-}
-
-function JourneyBlock({
-  detail,
+  onStart,
   onScenario,
-  pending,
+  scenarioPending,
 }: {
-  detail: JourneyDetail;
+  emergency: Emergency;
+  recommendedVehicles: Array<Vehicle & { distanceMeters: number; reason?: string; recommended?: boolean }>;
+  routeRequest: RouteRequest | null;
+  recommended: Candidate | null;
+  alternatives: Candidate[];
+  explanation?: Explanation; // used by parent WhyCard; kept for API completeness
+  journey?: JourneyDetail;
+  calculating: boolean;
+  dispatching: boolean;
+  corridorId: string;
+  onCorridorChange: (id: string) => void;
+  onAssign: (id?: string) => void;
+  onCalculate: () => void;
+  onSelect: (id: string) => void;
+  onStart: () => void;
   onScenario: (status: RoadStatus) => void;
-  pending: boolean;
+  scenarioPending: boolean;
 }) {
-  const remainingMin = Math.max(
-    0,
-    Math.round(
-      ((new Date(detail.journey.estimatedArrivalAt).getTime() - Date.now()) / 60000),
-    ),
-  );
+  const recScore = displayScore(recommended?.score);
   return (
-    <>
-      <Panel title="Journey">
-        <div className="flex items-end justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.14em] text-ash-400">
-              {detail.vehicle.callSign}
-            </div>
-            <div className="mt-1 font-mono text-2xl tabular">{remainingMin} min</div>
-            <div className="text-[12px] text-ash-400">
-              ETA {formatEtaClock(detail.journey.estimatedArrivalAt)}
-            </div>
-          </div>
-          <div className="text-right">
-            <StatusChip tone={detail.journey.status === "ACTIVE" ? "clear" : "neutral"}>
-              {detail.journey.status.toLowerCase()}
-            </StatusChip>
-            <div className="mt-2 font-mono text-[12px] text-ash-300">
-              {Math.round(detail.journey.progress * 100)}%
-            </div>
-          </div>
-        </div>
-        <div className="mt-3 h-1 bg-ink-700">
-          <motion.div
-            className="h-full bg-brass"
-            animate={{ width: `${Math.round(detail.journey.progress * 100)}%` }}
-            transition={{ duration: 0.35 }}
-          />
-        </div>
-      </Panel>
-
-      <Panel
-        title="Demo simulation"
-        action={<span className="text-[10px] uppercase tracking-[0.14em] text-brass">Simulated</span>}
-      >
-        <p className="mb-2 text-[11px] leading-relaxed text-ash-400">
-          Local operational reports for Marine Drive. Not live municipal traffic.
+    <div className="pb-6">
+      <div className="px-5 pt-5">
+        <div className="text-[12px] text-muted">{emergency.code}</div>
+        <h2 className="mt-0.5 text-[18px] font-semibold">
+          {incidentTitle(emergency.incidentType, emergency.notes)}
+        </h2>
+        <p className="mt-1 text-[13px] text-muted">
+          {emergency.originLabel} → {emergency.destinationLabel}
         </p>
-        <div className="grid grid-cols-3 gap-2">
-          {DEMO_PRESETS.map((preset) => (
-            <Button
-              key={preset.id}
-              variant={preset.id === "BLOCKED" ? "danger" : preset.id === "CONGESTED" ? "warn" : "ghost"}
-              disabled={pending || detail.journey.status !== "ACTIVE"}
-              onClick={() => onScenario(preset.id)}
-            >
-              {preset.label}
-            </Button>
-          ))}
-        </div>
-      </Panel>
+      </div>
 
-      <Panel title="Timeline">
-        <ol className="space-y-2">
-          {detail.events.map((event) => (
-            <li key={event.id} className="flex gap-3 text-[12px]">
-              <span className="w-16 shrink-0 font-mono text-ash-400">
-                {formatWhen(event.occurredAt).slice(0, 8)}
-              </span>
-              <span>
-                <span className="text-paper">{event.type.replaceAll("_", " ")}</span>
-                {typeof event.payload?.reason === "string" && (
-                  <span className="block text-ash-400">{event.payload.reason}</span>
-                )}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </Panel>
-    </>
+      {routeRequest?.selection == null && routeRequest?.candidates?.every((c) => c.blocked) && (
+        <div className="mx-5 mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-critical">
+          No suitable route available. The destination cannot currently be reached through
+          the available routes.
+        </div>
+      )}
+
+      {!routeRequest && emergency.status !== "DISPATCHED" && (
+        <div className="space-y-3 px-5 pt-4">
+          {!emergency.vehicle && (
+            <div className="space-y-2">
+              <div className="text-[13px] font-medium">Recommended unit</div>
+              {recommendedVehicles.slice(0, 3).map((vehicle) => (
+                <button
+                  key={vehicle.id}
+                  onClick={() => onAssign(vehicle.id)}
+                  className={cn(
+                    "w-full rounded-xl border px-3 py-2 text-left",
+                    vehicle.recommended ? "border-nav/40 bg-blue-50/50" : "border-line",
+                  )}
+                >
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="font-medium">{vehicle.callSign}</span>
+                    <span className="text-muted">{(vehicle.distanceMeters / 1000).toFixed(1)} km</span>
+                  </div>
+                  {vehicle.reason && <p className="mt-1 text-[11px] text-muted">{vehicle.reason}</p>}
+                </button>
+              ))}
+            </div>
+          )}
+          <Button className="w-full" disabled={calculating} onClick={onCalculate}>
+            {calculating ? "Calculating…" : "Calculate routes"}
+          </Button>
+        </div>
+      )}
+
+      {recommended && (
+        <div className="px-5 pt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-[15px] font-semibold">Recommended Route</h3>
+            <StatusChip tone="clear">Best</StatusChip>
+          </div>
+          <div className="rounded-2xl border border-line p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[32px] font-semibold leading-none tabular">{recommended.etaLabel}</div>
+                <div className="mt-1 text-[13px] text-muted">
+                  {recommended.distanceLabel}
+                  {journey?.journey.estimatedArrivalAt
+                    ? ` · ETA ${formatEtaClock(journey.journey.estimatedArrivalAt)}`
+                    : ""}
+                </div>
+              </div>
+              {recScore != null && <ScoreRing value={recScore} />}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-[12px]">
+              <Metric label="Traffic" value={trafficLabel(recommended.trafficLevel)} tone={trafficTone(recommended.trafficLevel)} />
+              <Metric label="Road Status" value={roadLabel(recommended.roadImpact)} tone={roadTone(recommended.roadImpact)} />
+              <Metric label="Priority" value={priorityShort(emergency.priority)} tone="nav" />
+            </div>
+            {emergency.status !== "DISPATCHED" && emergency.status !== "COMPLETED" && (
+              <Button className="mt-4 w-full" disabled={dispatching || recommended.blocked} onClick={onStart}>
+                <Play size={14} fill="currentColor" /> Start Journey
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {alternatives.length > 0 && (
+        <div className="px-5 pt-5">
+          <h3 className="mb-2 text-[13px] font-medium text-muted">Alternative Routes</h3>
+          <div className="space-y-2">
+            {alternatives.map((candidate) => (
+              <button
+                key={candidate.id}
+                disabled={candidate.blocked}
+                onClick={() => onSelect(candidate.id)}
+                className="flex w-full items-center justify-between rounded-xl border border-line px-3 py-2.5 text-left disabled:opacity-50"
+              >
+                <div>
+                  <div className="text-[15px] font-semibold">{candidate.etaLabel}</div>
+                  <div className="text-[12px] text-muted">
+                    {candidate.distanceLabel}
+                    {candidate.blocked ? " · Blocked" : ""}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] text-muted">Score</div>
+                  <div className="text-[16px] font-semibold tabular">{displayScore(candidate.score) ?? "—"}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {routeRequest && (
+        <p className="px-5 pt-3 text-[11px] text-muted">
+          {routeRequest.dataSourceLabel === "GOOGLE ROUTES" ? "Live Google Routes" : "DEMO SIMULATION"}
+        </p>
+      )}
+
+      {journey && (
+        <div className="mt-4 border-t border-line px-5 pt-4">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="text-[12px] text-muted">
+                {journey.vehicle.callSign}
+                {journey.journey.currentRouteLabel ? ` · ${journey.journey.currentRouteLabel}` : ""}
+              </div>
+              <div className="mt-1 text-[28px] font-semibold tabular">
+                {Math.max(0, Math.round((journey.journey.remainingSeconds ?? 0) / 60))} min
+              </div>
+              <div className="text-[12px] text-muted">
+                {((journey.journey.remainingMeters ?? 0) / 1000).toFixed(1)} km remaining
+              </div>
+            </div>
+            <StatusChip tone={journey.journey.status === "ACTIVE" ? "clear" : "neutral"}>
+              {journey.journey.status === "ACTIVE" ? "En route" : journey.journey.status.toLowerCase()}
+            </StatusChip>
+          </div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <motion.div
+              className="h-full bg-nav"
+              animate={{ width: `${Math.round(journey.journey.progress * 100)}%` }}
+              transition={{ duration: 0.35 }}
+            />
+          </div>
+          {journey.journey.status === "ACTIVE" && (
+            <div className="mt-4 space-y-2">
+              <div className="text-[12px] font-medium text-muted">Demo simulation</div>
+              <select className={inputClass()} value={corridorId} onChange={(e) => onCorridorChange(e.target.value)}>
+                {DEMO_CORRIDORS.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+              <div className="grid grid-cols-3 gap-2">
+                {DEMO_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.id}
+                    variant={preset.id === "BLOCKED" ? "danger" : "ghost"}
+                    disabled={scenarioPending}
+                    onClick={() => onScenario(preset.id)}
+                  >
+                    {preset.id === "BLOCKED" ? "Block road" : preset.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          <ol className="mt-4 space-y-1.5">
+            {journey.events.slice(0, 6).map((event) => (
+              <li key={event.id} className="flex gap-2 text-[12px] text-muted">
+                <span className="w-14 shrink-0 font-mono">{formatWhen(event.occurredAt).slice(0, 5)}</span>
+                <span>{event.type.replaceAll("_", " ").toLowerCase()}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
   );
 }
 
-function Legend() {
+function Metric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "critical" | "warning" | "clear" | "neutral" | "nav";
+}) {
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 hidden rounded-sm border border-ink-700 bg-ink-900/90 px-2.5 py-2 text-[10px] uppercase tracking-[0.12em] text-ash-300 md:block">
-      <div className="mb-1 text-ash-400">Legend</div>
-      <div className="flex gap-3">
-        <span><i className="mr-1 inline-block h-1.5 w-4 bg-[#E8D2A6] align-middle" /> Recommended</span>
-        <span><i className="mr-1 inline-block h-1.5 w-4 bg-[#B42318] align-middle" /> Blocked</span>
-        <span><i className="mr-1 inline-block h-1.5 w-4 bg-[#B54708] align-middle" /> Congestion</span>
+    <div>
+      <div className="text-[11px] text-muted">{label}</div>
+      <StatusChip tone={tone}>{value}</StatusChip>
+    </div>
+  );
+}
+
+function ScoreRing({ value }: { value: number }) {
+  const r = 16;
+  const c = 2 * Math.PI * r;
+  const offset = c - (value / 100) * c;
+  return (
+    <div className="relative h-14 w-14">
+      <svg viewBox="0 0 40 40" className="h-14 w-14 -rotate-90">
+        <circle cx="20" cy="20" r={r} fill="none" stroke="#e8eaed" strokeWidth="3.5" />
+        <circle
+          cx="20"
+          cy="20"
+          r={r}
+          fill="none"
+          stroke="#188038"
+          strokeWidth="3.5"
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-[13px] font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function WhyCard({
+  explanation,
+  recommended,
+  open,
+  onToggle,
+}: {
+  explanation: Explanation;
+  recommended: Candidate | null;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const traffic = factorScore(recommended?.breakdown?.trafficPenalty ?? explanation.components?.trafficPenalty);
+  const road = factorScore(recommended?.breakdown?.roadPenalty ?? explanation.components?.roadPenalty);
+  const distance = factorScore(recommended?.breakdown?.distancePenalty ?? explanation.components?.distancePenalty);
+  const priority = 100;
+  return (
+    <motion.div
+      layout
+      className="absolute bottom-5 left-3 z-20 hidden w-[min(520px,calc(100%-280px))] rounded-2xl border border-line bg-white/95 p-4 shadow-md backdrop-blur-sm md:block"
+    >
+      <button onClick={onToggle} className="flex w-full items-center justify-between text-left">
+        <span className="text-[15px] font-semibold">Why this route?</span>
+        <ChevronDown size={16} className={cn("text-muted transition-transform", open && "rotate-180")} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 grid gap-4 sm:grid-cols-[1fr_1.1fr]">
+              <p className="text-[13px] leading-relaxed text-muted">
+                {explanation.summary ||
+                  explanation.reason ||
+                  "This route is optimal because it has lighter traffic, clear roads, and the fastest travel time for this emergency priority."}
+              </p>
+              <div className="space-y-1.5">
+                <Bar label="Traffic" value={traffic} />
+                <Bar label="Road Status" value={road} />
+                <Bar label="Distance" value={distance} />
+                <Bar label="Priority Match" value={priority} />
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function Bar({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="grid grid-cols-[92px_1fr_48px] items-center gap-2 text-[12px]">
+      <span className="text-muted">{label}</span>
+      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full bg-clear" style={{ width: `${value}%` }} />
       </div>
+      <span className="text-right tabular text-muted">
+        {value}
+        <span className="text-slate-400"> /100</span>
+      </span>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from "../middleware/auth";
 import { createVehicleSchema, patchVehicleSchema } from "../validators";
 import {
   createVehicle,
+  deleteVehicle,
   getVehicle,
   listVehicles,
   updateVehicle,
@@ -34,4 +35,9 @@ vehiclesRouter.patch("/:id", requireRole("ADMIN"), async (req, res) => {
   const body = patchVehicleSchema.parse(req.body);
   const vehicle = await updateVehicle(paramId(req.params.id), body);
   res.json({ vehicle });
+});
+
+vehiclesRouter.delete("/:id", requireRole("ADMIN"), async (req, res) => {
+  await deleteVehicle(paramId(req.params.id));
+  res.status(204).send();
 });

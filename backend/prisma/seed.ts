@@ -1,22 +1,29 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { encodePolyline } from "../src/lib/geo";
+import { DETERMINISTIC_DEMO } from "../src/lib/locations";
 
 const prisma = new PrismaClient();
 
-const marineDrive = encodePolyline([
-  { lat: 18.9432, lng: 72.8232 },
-  { lat: 18.956, lng: 72.821 },
-  { lat: 18.969, lng: 72.814 },
-  { lat: 18.982, lng: 72.811 },
-  { lat: 18.994, lng: 72.813 },
+const sionLink = encodePolyline([
+  { lat: 19.0178, lng: 72.8478 },
+  { lat: 19.012, lng: 72.846 },
+  { lat: 19.007, lng: 72.844 },
+  { lat: 19.0022, lng: 72.8416 },
 ]);
 
 const eastern = encodePolyline([
-  { lat: 18.938, lng: 72.835 },
-  { lat: 18.95, lng: 72.842 },
-  { lat: 18.97, lng: 72.845 },
-  { lat: 18.99, lng: 72.848 },
+  { lat: 19.0178, lng: 72.8478 },
+  { lat: 19.02, lng: 72.855 },
+  { lat: 19.015, lng: 72.86 },
+  { lat: 19.008, lng: 72.852 },
+  { lat: 19.0022, lng: 72.8416 },
+]);
+
+const kurlaCongestion = encodePolyline([
+  { lat: 19.0726, lng: 72.8845 },
+  { lat: 19.065, lng: 72.878 },
+  { lat: 19.055, lng: 72.87 },
 ]);
 
 async function main() {
@@ -49,15 +56,6 @@ async function main() {
     {
       callSign: "AMB-101",
       type: "AMBULANCE" as const,
-      latitude: 18.922, // Colaba — closest to Nariman Point demo origin
-      longitude: 72.832,
-      locationLabel: "Colaba station",
-      status: "AVAILABLE" as const,
-      capabilities: { als: true, stretcher: true },
-    },
-    {
-      callSign: "AMB-102",
-      type: "AMBULANCE" as const,
       latitude: 19.0178,
       longitude: 72.8478,
       locationLabel: "Dadar post",
@@ -65,29 +63,38 @@ async function main() {
       capabilities: { als: true, stretcher: true },
     },
     {
+      callSign: "AMB-102",
+      type: "AMBULANCE" as const,
+      latitude: 19.043,
+      longitude: 72.863,
+      locationLabel: "Sion post",
+      status: "AVAILABLE" as const,
+      capabilities: { als: true, stretcher: true },
+    },
+    {
       callSign: "AMB-103",
       type: "AMBULANCE" as const,
-      latitude: 19.0596,
-      longitude: 72.8295,
-      locationLabel: "Bandra West post",
+      latitude: 19.0726,
+      longitude: 72.8845,
+      locationLabel: "Kurla post",
       status: "AVAILABLE" as const,
       capabilities: { als: false, stretcher: true },
     },
     {
       callSign: "AMB-104",
       type: "AMBULANCE" as const,
-      latitude: 19.1136,
-      longitude: 72.8697,
-      locationLabel: "Andheri East post",
+      latitude: 18.9696,
+      longitude: 72.8193,
+      locationLabel: "Mumbai Central post",
       status: "AVAILABLE" as const,
       capabilities: { als: true, stretcher: true },
     },
     {
       callSign: "ENG-201",
       type: "FIRE" as const,
-      latitude: 18.987,
-      longitude: 72.825,
-      locationLabel: "Worli fire station",
+      latitude: 18.9633,
+      longitude: 72.8331,
+      locationLabel: "JJ Hospital fire station",
       status: "INACTIVE" as const,
       capabilities: { water: true },
     },
@@ -107,49 +114,67 @@ async function main() {
     });
   }
 
-  const existingMarine = await prisma.roadCondition.findFirst({
-    where: { corridorId: "MARINE_DRIVE" },
-  });
-  if (!existingMarine) {
-    await prisma.roadCondition.create({
-      data: {
-        title: "DEMO SIMULATION — Marine Drive clear",
-        status: "CLEAR",
-        corridorId: "MARINE_DRIVE",
-        simulated: true,
-        reportedById: admin.id,
-        geometry: {
-          type: "corridor",
-          corridorId: "MARINE_DRIVE",
-          label: "Marine Drive / Worli Sea Face",
-          polyline: marineDrive,
-        },
-      },
+  const corridors = [
+    {
+      corridorId: "SION_LINK",
+      title: "DEMO SIMULATION — Sion–Parel link clear",
+      status: "CLEAR" as const,
+      polyline: sionLink,
+      label: "Sion–Parel link (deterministic demo corridor)",
+    },
+    {
+      corridorId: "EASTERN_CONNECTOR",
+      title: "DEMO SIMULATION — Eastern connector advisory",
+      status: "ADVISORY" as const,
+      polyline: eastern,
+      label: "Eastern connector",
+    },
+    {
+      corridorId: "KURLA_JUNCTION",
+      title: "DEMO SIMULATION — Kurla junction congested",
+      status: "CONGESTED" as const,
+      polyline: kurlaCongestion,
+      label: "Kurla junction",
+    },
+  ];
+
+  for (const corridor of corridors) {
+    const existing = await prisma.roadCondition.findFirst({
+      where: { corridorId: corridor.corridorId },
     });
+    const geometry = {
+      type: "corridor",
+      corridorId: corridor.corridorId,
+      label: corridor.label,
+      polyline: corridor.polyline,
+    };
+    if (existing) {
+      await prisma.roadCondition.update({
+        where: { id: existing.id },
+        data: {
+          title: corridor.title,
+          status: corridor.status,
+          simulated: true,
+          geometry,
+        },
+      });
+    } else {
+      await prisma.roadCondition.create({
+        data: {
+          title: corridor.title,
+          status: corridor.status,
+          corridorId: corridor.corridorId,
+          simulated: true,
+          reportedById: admin.id,
+          geometry,
+        },
+      });
+    }
   }
 
-  const existingEastern = await prisma.roadCondition.findFirst({
-    where: { corridorId: "EASTERN_CONNECTOR" },
-  });
-  if (!existingEastern) {
-    await prisma.roadCondition.create({
-      data: {
-        title: "DEMO SIMULATION — Eastern connector advisory",
-        status: "ADVISORY",
-        corridorId: "EASTERN_CONNECTOR",
-        simulated: true,
-        reportedById: admin.id,
-        geometry: {
-          type: "corridor",
-          corridorId: "EASTERN_CONNECTOR",
-          label: "Eastern connector / JJ approach",
-          polyline: eastern,
-        },
-      },
-    });
-  }
-
-  console.log("Seeded RapidRoute demo users, vehicles, and road conditions.");
+  console.log(
+    `Seeded RapidRoute demo. Deterministic blockage corridor: ${DETERMINISTIC_DEMO.blockCorridorId}`,
+  );
 }
 
 main()

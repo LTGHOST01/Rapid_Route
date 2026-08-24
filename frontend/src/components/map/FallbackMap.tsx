@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { boundsOf, decodePolyline, type LatLng } from "../../lib/geo";
-import { routeColor } from "../../lib/mapStyles";
+import { midpoint, routeColor } from "../../lib/mapStyles";
 import type { Candidate, RoadCondition, Vehicle } from "../../types";
 
 type Props = {
@@ -19,7 +19,7 @@ function project(
   bounds: ReturnType<typeof boundsOf>,
   width: number,
   height: number,
-  pad = 36,
+  pad = 48,
 ) {
   const latSpan = Math.max(0.01, bounds.maxLat - bounds.minLat);
   const lngSpan = Math.max(0.01, bounds.maxLng - bounds.minLng);
@@ -53,7 +53,7 @@ export function FallbackMap({
   const height = 760;
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-ink-950">
+    <div className="relative h-full w-full overflow-hidden bg-[#e8f0e3]">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         className="h-full w-full"
@@ -62,7 +62,7 @@ export function FallbackMap({
           const rect = event.currentTarget.getBoundingClientRect();
           const x = ((event.clientX - rect.left) / rect.width) * width;
           const y = ((event.clientY - rect.top) / rect.height) * height;
-          const pad = 36;
+          const pad = 48;
           const latSpan = Math.max(0.01, bounds.maxLat - bounds.minLat);
           const lngSpan = Math.max(0.01, bounds.maxLng - bounds.minLng);
           const lng = bounds.minLng + ((x - pad) / (width - pad * 2)) * lngSpan;
@@ -70,26 +70,16 @@ export function FallbackMap({
           onMapClick({ lat, lng });
         }}
       >
-        <rect width={width} height={height} fill="#0c0e11" />
-        {Array.from({ length: 12 }).map((_, i) => (
+        <rect width={width} height={height} fill="#e8f0e3" />
+        <rect x="0" y="80" width={width} height="220" fill="#d4e6f7" opacity="0.55" />
+        {Array.from({ length: 10 }).map((_, i) => (
           <line
             key={`h${i}`}
             x1={0}
             x2={width}
-            y1={(i * height) / 12}
-            y2={(i * height) / 12}
-            stroke="#1c2128"
-            strokeWidth={1}
-          />
-        ))}
-        {Array.from({ length: 12 }).map((_, i) => (
-          <line
-            key={`v${i}`}
-            y1={0}
-            y2={height}
-            x1={(i * width) / 12}
-            x2={(i * width) / 12}
-            stroke="#1c2128"
+            y1={(i * height) / 10}
+            y2={(i * height) / 10}
+            stroke="#d0d7de"
             strokeWidth={1}
           />
         ))}
@@ -100,18 +90,27 @@ export function FallbackMap({
           );
           const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
           const recommended = candidate.id === selectedId && !candidate.blocked;
+          const mid = midpoint(pts);
           return (
-            <path
-              key={candidate.id}
-              d={d}
-              fill="none"
-              stroke={routeColor(index, recommended, candidate.blocked)}
-              strokeWidth={recommended ? 6 : candidate.blocked ? 3 : 3.5}
-              strokeDasharray={candidate.blocked ? "8 7" : undefined}
-              opacity={candidate.blocked ? 0.55 : recommended ? 1 : 0.72}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
+            <g key={candidate.id}>
+              <path
+                d={d}
+                fill="none"
+                stroke={routeColor(index, recommended, candidate.blocked)}
+                strokeWidth={recommended ? 6 : 4}
+                opacity={candidate.blocked ? 0.45 : 1}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+              {mid && (
+                <foreignObject x={mid.x - 32} y={mid.y - 18} width="64" height="36">
+                  <div className={`rr-eta ${recommended ? "primary" : "alt"}`} style={{ transform: "none" }}>
+                    <strong>{candidate.blocked ? "Blocked" : candidate.etaLabel}</strong>
+                    {!candidate.blocked && <span>{candidate.distanceLabel}</span>}
+                  </div>
+                </foreignObject>
+              )}
+            </g>
           );
         })}
 
@@ -127,25 +126,20 @@ export function FallbackMap({
                 key={condition.id}
                 d={d}
                 fill="none"
-                stroke={condition.status === "BLOCKED" ? "#B42318" : "#B54708"}
+                stroke={condition.status === "BLOCKED" ? "#D93025" : "#F9AB00"}
                 strokeWidth={8}
-                opacity={0.28}
+                opacity={0.3}
                 strokeLinecap="round"
               />
             );
           })}
 
         {vehicles.map((vehicle) => {
-          const p = project(
-            { lat: vehicle.latitude, lng: vehicle.longitude },
-            bounds,
-            width,
-            height,
-          );
+          const p = project({ lat: vehicle.latitude, lng: vehicle.longitude }, bounds, width, height);
           return (
             <g key={vehicle.id}>
-              <circle cx={p.x} cy={p.y} r={5} fill="#6E8B74" />
-              <text x={p.x + 8} y={p.y + 4} fill="#b4b1a8" fontSize={11} fontFamily="IBM Plex Sans">
+              <circle cx={p.x} cy={p.y} r={6} fill="#188038" stroke="#fff" strokeWidth={2} />
+              <text x={p.x + 9} y={p.y + 4} fill="#202124" fontSize={11} fontFamily="Inter">
                 {vehicle.callSign}
               </text>
             </g>
@@ -153,71 +147,43 @@ export function FallbackMap({
         })}
 
         {origin && (
-          <Marker
-            point={project(origin, bounds, width, height)}
-            label="Origin"
-            color="#C4A574"
-          />
-        )}
-        {destination && (
-          <Marker
-            point={project(destination, bounds, width, height)}
-            label="Hospital"
-            color="#E8D2A6"
-          />
-        )}
-        {vehiclePosition && (
           <g>
             <circle
-              cx={project(vehiclePosition, bounds, width, height).x}
-              cy={project(vehiclePosition, bounds, width, height).y}
-              r={9}
-              fill="#14171c"
-              stroke="#E8D2A6"
+              cx={project(origin, bounds, width, height).x}
+              cy={project(origin, bounds, width, height).y}
+              r={8}
+              fill="#188038"
+              stroke="#fff"
               strokeWidth={2}
             />
-            <text
-              x={project(vehiclePosition, bounds, width, height).x}
-              y={project(vehiclePosition, bounds, width, height).y + 4}
-              textAnchor="middle"
-              fill="#E8D2A6"
-              fontSize={9}
-              fontFamily="IBM Plex Sans"
-              fontWeight={600}
-            >
-              +
-            </text>
           </g>
         )}
+        {destination && (
+          <g>
+            <circle
+              cx={project(destination, bounds, width, height).x}
+              cy={project(destination, bounds, width, height).y}
+              r={9}
+              fill="#D93025"
+              stroke="#fff"
+              strokeWidth={2}
+            />
+          </g>
+        )}
+        {vehiclePosition && (
+          <circle
+            cx={project(vehiclePosition, bounds, width, height).x}
+            cy={project(vehiclePosition, bounds, width, height).y}
+            r={7}
+            fill="#1A73E8"
+            stroke="#fff"
+            strokeWidth={2}
+          />
+        )}
       </svg>
-      <div className="pointer-events-none absolute left-3 top-3 rounded-sm border border-brass/40 bg-ink-900/90 px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-brass">
+      <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-line bg-white/90 px-2 py-1 text-[11px] text-muted">
         Demo simulation — schematic geometry
       </div>
     </div>
-  );
-}
-
-function Marker({
-  point,
-  label,
-  color,
-}: {
-  point: { x: number; y: number };
-  label: string;
-  color: string;
-}) {
-  return (
-    <g>
-      <circle cx={point.x} cy={point.y} r={6} fill={color} />
-      <text
-        x={point.x + 9}
-        y={point.y - 8}
-        fill={color}
-        fontSize={11}
-        fontFamily="IBM Plex Sans"
-      >
-        {label}
-      </text>
-    </g>
   );
 }

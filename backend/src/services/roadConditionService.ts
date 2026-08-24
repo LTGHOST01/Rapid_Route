@@ -97,6 +97,12 @@ export async function updateRoadCondition(
   return publicRoadCondition(condition);
 }
 
+export async function deleteRoadCondition(id: string) {
+  const existing = await prisma.roadCondition.findUnique({ where: { id } });
+  if (!existing) throw new NotFoundError("Road condition not found");
+  await prisma.roadCondition.delete({ where: { id } });
+}
+
 export function tagRouteWithConditions(
   route: NormalizedRoute,
   conditions: Array<{
@@ -111,7 +117,9 @@ export function tagRouteWithConditions(
   roadConditionIds: string[];
 } {
   const matching = conditions.filter((condition) => {
-    if (route.corridorIds.includes(condition.corridorId)) return true;
+    if (route.corridorIds.length > 0) {
+      return route.corridorIds.includes(condition.corridorId);
+    }
     const geometry = (condition.geometry ?? {}) as ConditionGeometry;
     if (geometry.polyline || geometry.points?.length) {
       return routeIntersectsGeometry(route.polyline, geometry);

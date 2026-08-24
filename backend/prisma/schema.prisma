@@ -24,6 +24,13 @@ enum VehicleStatus {
   INACTIVE
 }
 
+enum IncidentType {
+  MEDICAL
+  TRAUMA
+  FIRE
+  POLICE
+}
+
 enum EmergencyPriority {
   CRITICAL
   HIGH
@@ -124,6 +131,7 @@ model EmergencyVehicle {
 model Emergency {
   id                 String             @id @default(uuid())
   code               String             @unique
+  incidentType       IncidentType       @default(MEDICAL)
   priority           EmergencyPriority
   status             EmergencyStatus    @default(OPEN)
   originLabel        String

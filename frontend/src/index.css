@@ -1,31 +1,17 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --color-ink-950: #0c0e11;
-  --color-ink-900: #14171c;
-  --color-ink-800: #1c2128;
-  --color-ink-700: #2a3038;
-  --color-ink-600: #3d4450;
-  --color-ink-500: #5c6370;
-
-  --color-paper: #f3efe6;
-  --color-paper-2: #e7e2d6;
-  --color-ash-400: #8b8a84;
-  --color-ash-300: #b4b1a8;
-  --color-ash-200: #d4d0c6;
-
-  --color-brass: #c4a574;
-  --color-brass-2: #a88858;
-
-  --color-critical: #b42318;
-  --color-critical-soft: #3a1714;
-  --color-warning: #b54708;
-  --color-warning-soft: #3a2612;
-  --color-clear: #2f6b3c;
-  --color-clear-soft: #16301c;
+  --color-ink: #202124;
+  --color-muted: #5f6368;
+  --color-line: #e8eaed;
+  --color-soft: #f8f9fa;
+  --color-nav: #1a73e8;
+  --color-nav-dark: #1557b0;
+  --color-critical: #d93025;
+  --color-warning: #f9ab00;
+  --color-clear: #188038;
 }
 
 html,
@@ -36,8 +22,8 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-ink-950);
-  color: var(--color-paper);
+  background: #fff;
+  color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
@@ -54,11 +40,47 @@ textarea {
 }
 
 ::selection {
-  background: #c4a57455;
+  background: #d2e3fc;
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+.rr-eta {
+  transform: translate(-50%, -50%);
+  min-width: 56px;
+  border-radius: 8px;
+  padding: 4px 8px;
+  text-align: center;
+  line-height: 1.15;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(60, 64, 67, 0.18);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.rr-eta strong {
+  display: block;
+}
+
+.rr-eta span {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0.92;
+}
+
+.rr-eta.primary {
+  background: #1a73e8;
+  color: #fff;
+}
+
+.rr-eta.alt {
+  background: #fff;
+  color: #3c4043;
+  border: 1px solid #dadce0;
 }
 
 @media (prefers-reduced-motion: reduce) {

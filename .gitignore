@@ -13,3 +13,5 @@ coverage/
 *.tsbuildinfo
 .prisma/
 backend/prisma/dev.db
+*:Zone.Identifier
+refrence.png

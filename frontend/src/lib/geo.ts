@@ -56,12 +56,34 @@ export function formatWhen(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
+export const MUMBAI_ORIGINS = [
+  { id: "dadar", label: "Dadar", lat: 19.0178, lng: 72.8478 },
+  { id: "sion", label: "Sion", lat: 19.043, lng: 72.863 },
+  { id: "kurla", label: "Kurla", lat: 19.0726, lng: 72.8845 },
+  { id: "mumbai_central", label: "Mumbai Central", lat: 18.9696, lng: 72.8193 },
+];
+
+export const MUMBAI_HOSPITALS = [
+  { id: "kem", label: "KEM Hospital, Parel", lat: 19.0022, lng: 72.8416 },
+  { id: "sion_hospital", label: "Sion Hospital (LTMMC)", lat: 19.0368, lng: 72.86 },
+  { id: "jj", label: "JJ Hospital, Byculla", lat: 18.9633, lng: 72.8331 },
+];
+
+export const DEMO_CORRIDORS = [
+  { id: "SION_LINK", label: "Sion–Parel link" },
+  { id: "PAREL_INLAND", label: "Parel inland" },
+  { id: "EASTERN_CONNECTOR", label: "Eastern connector" },
+];
+
 export const MUMBAI_DEMO = {
-  originLabel: "Nariman Point, Mumbai",
-  originLat: 18.9256,
-  originLng: 72.8242,
-  destinationLabel: "Lilavati Hospital, Bandra West",
-  destinationLat: 19.051,
-  destinationLng: 72.8295,
-  notes: "Multi-vehicle collision. Two critical patients.",
+  incidentType: "TRAUMA" as const,
+  priority: "CRITICAL" as const,
+  originLabel: "Dadar",
+  originLat: 19.0178,
+  originLng: 72.8478,
+  destinationLabel: "KEM Hospital, Parel",
+  destinationLat: 19.0022,
+  destinationLng: 72.8416,
+  notes: "Multi-vehicle collision at Dadar. Two critical patients for KEM.",
+  blockCorridorId: "SION_LINK",
 };

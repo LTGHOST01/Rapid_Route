@@ -46,8 +46,15 @@ export async function getJourney(id: string) {
 }
 
 function serializeJourney(journey: Awaited<ReturnType<typeof loadJourney>>) {
+  const progress = toNumber(journey.progress);
+  const remaining = 1 - progress;
   return {
-    journey: publicJourney(journey),
+    journey: {
+      ...publicJourney(journey),
+      remainingMeters: Math.round(journey.selection.candidate.distanceMeters * remaining),
+      remainingSeconds: Math.round(journey.selection.candidate.etaSeconds * remaining),
+      currentRouteLabel: journey.selection.candidate.label,
+    },
     emergency: {
       id: journey.emergency.id,
       code: journey.emergency.code,

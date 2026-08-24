@@ -5,7 +5,9 @@ import { Button, Field, inputClass } from "../components/ui";
 import { ApiError } from "../lib/api";
 
 export function LoginPage() {
-  const { user, ready, login } = useAuth();
+  const { user, ready, login, register } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("dispatcher@rapidroute.local");
   const [password, setPassword] = useState("RapidRoute!dispatch");
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +20,8 @@ export function LoginPage() {
     setPending(true);
     setError(null);
     try {
-      await login(email, password);
+      if (mode === "register") await register(name, email, password);
+      else await login(email, password);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Unable to sign in");
     } finally {
@@ -27,44 +30,40 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full bg-ink-950">
-      <div className="relative hidden w-[46%] overflow-hidden border-r border-ink-700 lg:block">
-        <div className="absolute inset-0 bg-[linear-gradient(160deg,#14171c_0%,#0c0e11_55%,#1c2128_100%)]" />
-        <div className="absolute inset-8 border border-ink-700/80" />
+    <div className="flex min-h-full bg-white">
+      <div className="relative hidden w-[46%] overflow-hidden border-r border-line bg-soft lg:block">
         <div className="relative flex h-full flex-col justify-between p-12">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.22em] text-brass">
-              Operations console
+            <div className="flex items-center gap-2">
+              <span className="grid h-8 w-8 place-items-center rounded-md bg-critical text-white">+</span>
+              <span className="text-[20px] font-semibold">RapidRoute</span>
             </div>
-            <h1 className="mt-6 max-w-sm text-4xl font-semibold leading-tight tracking-tight">
-              Route decisions for emergency dispatch.
+            <h1 className="mt-10 max-w-sm text-[34px] font-semibold leading-tight tracking-tight">
+              Emergency routing that stays accountable.
             </h1>
-            <p className="mt-5 max-w-sm text-[15px] leading-relaxed text-ash-300">
-              Google supplies the roads. RapidRoute chooses the vehicle, scores
-              the candidates, and keeps an accountable record when the corridor
-              changes.
+            <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-muted">
+              Google supplies the roads. RapidRoute chooses the vehicle, scores the
+              candidates, and records why the route changed.
             </p>
           </div>
-          <p className="text-[12px] text-ash-400">
-            Not a replacement for Maps. A decision layer on top of it.
-          </p>
+          <p className="text-[13px] text-muted">A dispatch decision layer — not a maps replacement.</p>
         </div>
       </div>
       <div className="flex flex-1 items-center justify-center px-6">
-        <form onSubmit={onSubmit} className="w-full max-w-sm space-y-5">
+        <form onSubmit={onSubmit} className="w-full max-w-sm space-y-4">
           <div>
-            <div className="text-[11px] font-medium uppercase tracking-[0.2em] text-brass">
-              RapidRoute
-            </div>
-            <h2 className="mt-2 text-2xl font-semibold">Sign in to dispatch</h2>
+            <div className="text-[13px] font-medium text-muted">RapidRoute</div>
+            <h2 className="mt-1 text-[24px] font-semibold">
+              {mode === "login" ? "Sign in to dispatch" : "Create a dispatcher account"}
+            </h2>
           </div>
+          {mode === "register" && (
+            <Field label="Name">
+              <input className={inputClass()} value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+          )}
           <Field label="Email">
-            <input
-              className={inputClass()}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="username"
-            />
+            <input className={inputClass()} value={email} onChange={(e) => setEmail(e.target.value)} />
           </Field>
           <Field label="Password">
             <input
@@ -72,19 +71,24 @@ export function LoginPage() {
               className={inputClass()}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
             />
           </Field>
-          {error && <p className="text-[13px] text-red-300">{error}</p>}
+          {error && <p className="text-[13px] text-critical">{error}</p>}
           <Button type="submit" disabled={pending} className="w-full">
-            {pending ? "Signing in…" : "Enter console"}
+            {pending ? "Working…" : mode === "login" ? "Enter console" : "Create account"}
           </Button>
-          <p className="text-[12px] leading-relaxed text-ash-400">
-            Demo: <span className="text-ash-300">dispatcher@rapidroute.local</span> /{" "}
-            RapidRoute!dispatch
-            <br />
-            Admin: <span className="text-ash-300">admin@rapidroute.local</span> /{" "}
-            RapidRoute!admin
+          <button
+            type="button"
+            className="text-[13px] text-nav"
+            onClick={() => {
+              setMode(mode === "login" ? "register" : "login");
+              setError(null);
+            }}
+          >
+            {mode === "login" ? "Need an account? Register" : "Already have an account? Sign in"}
+          </button>
+          <p className="text-[12px] leading-relaxed text-muted">
+            Demo: dispatcher@rapidroute.local / RapidRoute!dispatch
           </p>
         </form>
       </div>

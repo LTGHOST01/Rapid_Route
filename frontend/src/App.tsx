@@ -10,7 +10,7 @@ function Protected({ children }: { children: ReactNode }) {
   const { user, ready } = useAuth();
   if (!ready) {
     return (
-      <div className="flex h-full items-center justify-center text-[13px] text-ash-400">
+      <div className="flex h-full items-center justify-center text-[13px] text-muted">
         Restoring session…
       </div>
     );

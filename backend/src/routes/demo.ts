@@ -10,7 +10,7 @@ demoRouter.use(requireAuth);
 
 demoRouter.post("/road-scenario", async (req, res) => {
   const body = demoScenarioSchema.parse(req.body);
-  const corridorId = body.corridorId ?? "MARINE_DRIVE";
+  const corridorId = body.corridorId ?? "SION_LINK";
   const condition = await upsertDemoScenario({
     status: body.status,
     corridorId,

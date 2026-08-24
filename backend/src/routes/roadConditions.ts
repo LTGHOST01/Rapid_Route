@@ -3,6 +3,7 @@ import { requireAuth, requireRole } from "../middleware/auth";
 import { createRoadConditionSchema, patchRoadConditionSchema } from "../validators";
 import {
   createRoadCondition,
+  deleteRoadCondition,
   listRoadConditions,
   updateRoadCondition,
 } from "../services/roadConditionService";
@@ -33,4 +34,9 @@ roadConditionsRouter.patch("/:id", requireRole("ADMIN"), async (req, res) => {
   const condition = await updateRoadCondition(paramId(req.params.id), body);
   const reroutes = await rerouteActiveJourneysAffectedBy(condition.corridorId, condition.status);
   res.json({ roadCondition: condition, reroutes });
+});
+
+roadConditionsRouter.delete("/:id", requireRole("ADMIN"), async (req, res) => {
+  await deleteRoadCondition(paramId(req.params.id));
+  res.status(204).send();
 });

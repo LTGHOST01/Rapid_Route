@@ -1,4 +1,4 @@
-import type { EmergencyPriority, Prisma, SelectedBy } from "@prisma/client";
+import type { EmergencyPriority, IncidentType, Prisma, SelectedBy } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { BadRequestError, NotFoundError } from "../lib/errors";
 import { publicEmergency, publicRouteRequest } from "../lib/dto";
@@ -48,10 +48,13 @@ export async function getEmergency(id: string) {
   });
   if (!emergency) throw new NotFoundError("Emergency not found");
 
-  const recommended = await recommendVehicles({
-    lat: toNumber(emergency.originLat),
-    lng: toNumber(emergency.originLng),
-  });
+  const recommended = await recommendVehicles(
+    {
+      lat: toNumber(emergency.originLat),
+      lng: toNumber(emergency.originLng),
+    },
+    { incidentType: emergency.incidentType, priority: emergency.priority },
+  );
 
   return {
     emergency: publicEmergency(emergency),
@@ -66,6 +69,7 @@ export async function getEmergency(id: string) {
 export async function createEmergency(
   createdById: string,
   input: {
+    incidentType?: IncidentType;
     priority: EmergencyPriority;
     originLabel: string;
     originLat: number;
@@ -79,6 +83,7 @@ export async function createEmergency(
   const emergency = await prisma.emergency.create({
     data: {
       code: nextEmergencyCode(),
+      incidentType: input.incidentType ?? "MEDICAL",
       priority: input.priority,
       originLabel: input.originLabel,
       originLat: input.originLat,
@@ -106,10 +111,13 @@ export async function assignVehicle(emergencyId: string, vehicleId?: string) {
 
   let chosenId = vehicleId;
   if (!chosenId) {
-    const recommended = await recommendVehicles({
-      lat: toNumber(emergency.originLat),
-      lng: toNumber(emergency.originLng),
-    });
+    const recommended = await recommendVehicles(
+      {
+        lat: toNumber(emergency.originLat),
+        lng: toNumber(emergency.originLng),
+      },
+      { incidentType: emergency.incidentType, priority: emergency.priority },
+    );
     if (recommended.length === 0) {
       throw new BadRequestError("No available compatible vehicles");
     }

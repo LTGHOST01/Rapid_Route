@@ -6,18 +6,18 @@ export function StatusChip({
   tone,
   children,
 }: {
-  tone: "critical" | "warning" | "clear" | "neutral" | "brass";
+  tone: "critical" | "warning" | "clear" | "neutral" | "nav";
   children: ReactNode;
 }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em]",
-        tone === "critical" && "border-critical/40 bg-critical-soft text-red-200",
-        tone === "warning" && "border-warning/40 bg-warning-soft text-amber-200",
-        tone === "clear" && "border-clear/40 bg-clear-soft text-emerald-200",
-        tone === "neutral" && "border-ink-600 bg-ink-800 text-ash-300",
-        tone === "brass" && "border-brass/40 bg-[#2a2418] text-brass",
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        tone === "critical" && "bg-red-50 text-critical",
+        tone === "warning" && "bg-amber-50 text-amber-700",
+        tone === "clear" && "bg-emerald-50 text-clear",
+        tone === "neutral" && "bg-slate-100 text-muted",
+        tone === "nav" && "bg-blue-50 text-nav",
       )}
     >
       {children}
@@ -45,7 +45,7 @@ export function trafficTone(level: TrafficLevel) {
 
 export function vehicleTone(status: VehicleStatus) {
   if (status === "AVAILABLE") return "clear" as const;
-  if (status === "ASSIGNED") return "brass" as const;
+  if (status === "ASSIGNED") return "nav" as const;
   return "neutral" as const;
 }
 
@@ -60,11 +60,11 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-sm px-3 py-2 text-[13px] font-medium tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-        variant === "primary" && "bg-paper text-ink-950 hover:bg-paper-2",
-        variant === "ghost" && "border border-ink-600 bg-transparent text-paper hover:border-ash-400",
+        "inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2.5 text-[13px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        variant === "primary" && "bg-nav text-white hover:bg-nav-dark",
+        variant === "ghost" && "border border-line bg-white text-ink hover:bg-soft",
         variant === "danger" && "bg-critical text-white hover:bg-red-700",
-        variant === "warn" && "bg-warning text-ink-950 hover:bg-amber-600",
+        variant === "warn" && "bg-amber-500 text-white hover:bg-amber-600",
         className,
       )}
       {...props}
@@ -83,16 +83,14 @@ export function Field({
 }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-ash-400">
-        {label}
-      </span>
+      <span className="text-[12px] font-medium text-muted">{label}</span>
       {children}
     </label>
   );
 }
 
 export function inputClass() {
-  return "w-full rounded-sm border border-ink-600 bg-ink-950 px-2.5 py-2 text-[13px] text-paper outline-none placeholder:text-ink-500 focus:border-brass";
+  return "w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] text-ink outline-none placeholder:text-slate-400 focus:border-nav";
 }
 
 export function Panel({
@@ -107,16 +105,14 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={cn("border-b border-ink-700 last:border-b-0", className)}>
+    <section className={cn("px-5 py-4", className)}>
       {title && (
-        <header className="flex items-center justify-between px-4 py-2.5">
-          <h2 className="text-[10px] font-medium uppercase tracking-[0.18em] text-ash-400">
-            {title}
-          </h2>
+        <header className="mb-3 flex items-center justify-between">
+          <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
           {action}
         </header>
       )}
-      <div className="px-4 pb-4">{children}</div>
+      {children}
     </section>
   );
 }

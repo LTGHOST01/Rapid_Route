@@ -42,6 +42,7 @@ export function publicEmergency(
   return {
     id: emergency.id,
     code: emergency.code,
+    incidentType: emergency.incidentType,
     priority: emergency.priority,
     status: emergency.status,
     originLabel: emergency.originLabel,
@@ -149,6 +150,7 @@ export function publicJourney(
     lastLat: toNumber(journey.lastLat),
     lastLng: toNumber(journey.lastLng),
     progress: toNumber(journey.progress),
+    simulatedPosition: true,
     updatedAt: journey.updatedAt,
   };
 }

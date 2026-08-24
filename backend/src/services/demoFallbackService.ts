@@ -91,7 +91,7 @@ export function buildDemoCandidates(origin: LatLng, destination: LatLng): Normal
       etaSeconds: 600,
       distanceMeters: coastalMeters,
       trafficLevel: "HIGH",
-      corridorIds: ["MARINE_DRIVE"],
+      corridorIds: ["SION_LINK"],
     },
     {
       providerRouteIndex: 1,
@@ -100,7 +100,7 @@ export function buildDemoCandidates(origin: LatLng, destination: LatLng): Normal
       etaSeconds: 720,
       distanceMeters: inlandMeters,
       trafficLevel: "MEDIUM",
-      corridorIds: ["PEDDER_ROAD"],
+      corridorIds: ["PAREL_INLAND"],
     },
     {
       providerRouteIndex: 2,

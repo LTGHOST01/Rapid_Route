@@ -1,7 +1,6 @@
-import type { ReactNode } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Shield, LogOut } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useAuth } from "../../lib/auth";
 import { api } from "../../lib/api";
 import type { Health } from "../../types";
@@ -15,52 +14,41 @@ export function AppShell() {
     refetchInterval: 15000,
   });
 
-  const source = health.data?.googleRoutesConfigured
-    ? "Google Routes ready"
-    : "Demo fallback only";
+  const source = health.data?.googleRoutesConfigured ? "Google Routes ready" : "Demo fallback only";
 
   return (
-    <div className="flex h-full flex-col bg-ink-950 text-paper">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-ink-700 px-3 md:px-4">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-sm border border-brass/40 bg-ink-900 text-[11px] font-semibold tracking-wide text-brass">
-              RR
+    <div className="flex h-full flex-col bg-white text-ink">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-line px-4">
+        <div className="flex items-center gap-8">
+          <div className="flex items-center gap-2">
+            <span className="grid h-7 w-7 place-items-center rounded-md bg-critical text-[15px] font-semibold text-white">
+              +
             </span>
-            <div>
-              <div className="text-[13px] font-semibold tracking-[0.14em]">RAPIDROUTE</div>
-              <div className="hidden text-[10px] uppercase tracking-[0.16em] text-ash-400 sm:block">
-                Emergency route decision
-              </div>
-            </div>
+            <span className="text-[18px] font-semibold tracking-tight">RapidRoute</span>
           </div>
-          <nav className="flex items-center gap-1">
-            <ShellLink to="/" icon={<LayoutDashboard size={14} />} label="Dispatch" />
-            <ShellLink to="/admin" icon={<Shield size={14} />} label="Admin" />
+          <nav className="flex items-center gap-5 text-[14px]">
+            <ShellLink to="/" label="Dispatch" />
+            <ShellLink to="/admin" label="Admin" />
           </nav>
         </div>
-        <div className="flex items-center gap-3 text-[12px]">
-          <div className="hidden items-center gap-2 sm:flex">
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                health.data?.ok ? "bg-emerald-500" : "bg-critical",
-              )}
-            />
-            <span className="text-ash-300">{source}</span>
-          </div>
-          <div className="hidden items-baseline gap-2 text-ash-300 md:flex">
-            <span>{user?.name}</span>
-            <span className="text-[10px] uppercase tracking-[0.14em] text-ash-400">
-              {user?.role.toLowerCase()}
-            </span>
+        <div className="flex items-center gap-4 text-[13px]">
+          <span className="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-clear sm:inline-flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-clear" />
+            {source}
+          </span>
+          <div className="hidden items-center gap-2 md:flex">
+            <span className="h-2 w-2 rounded-full bg-clear" />
+            <div className="leading-tight">
+              <div className="text-[11px] text-muted">Operator</div>
+              <div className="text-[13px] font-medium">{user?.name}</div>
+            </div>
           </div>
           <button
             onClick={logout}
-            className="flex items-center gap-1.5 text-ash-400 hover:text-paper"
+            className="flex items-center gap-1.5 text-muted hover:text-ink"
+            aria-label="Sign out"
           >
-            <LogOut size={14} />
-            <span className="hidden sm:inline">Sign out</span>
+            <LogOut size={16} />
           </button>
         </div>
       </header>
@@ -71,28 +59,25 @@ export function AppShell() {
   );
 }
 
-function ShellLink({
-  to,
-  icon,
-  label,
-}: {
-  to: string;
-  icon: ReactNode;
-  label: string;
-}) {
+function ShellLink({ to, label }: { to: string; label: string }) {
   return (
     <NavLink
       to={to}
       end={to === "/"}
       className={({ isActive }) =>
         cn(
-          "flex items-center gap-1.5 rounded-sm px-2.5 py-1.5 text-[12px] tracking-wide",
-          isActive ? "bg-ink-800 text-paper" : "text-ash-400 hover:text-paper",
+          "relative py-4 text-muted hover:text-ink",
+          isActive && "font-medium text-critical",
         )
       }
     >
-      {icon}
-      {label}
+      {({ isActive }) => (
+        <>
+          {label}
+          {isActive && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-critical" />}
+        </>
+      )}
     </NavLink>
   );
 }
+
