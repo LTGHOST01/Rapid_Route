@@ -1,0 +1,79 @@
+TWO DECKS
+---------
+SIH official 6-slide format (matches SIH idea template / SlideShare):
+  docs/RapidRoute_SIH_Format.pptx
+
+Longer 12-slide judge walkthrough (demo storytelling):
+  docs/RapidRoute_Judge_Deck.pptx
+
+Use the SIH 6-slide file if they asked for SIH format.
+Fill Team ID and Team Name on slide 1 before you present.
+
+
+RAPIDROUTE JUDGE DECK (12 slides)
+File: docs/RapidRoute_Judge_Deck.pptx
+Open in PowerPoint or Google Slides. Speaker notes are on every slide
+(View > Notes).
+
+
+1. THREE-TO-FOUR MINUTE TALK
+----------------------------
+0:00  Slide 1   Pitch. Pause after: Google shows the roads. RapidRoute
+                decides the dispatch.
+0:25  Slide 2   Problem. Unit, route, changing conditions, explainability.
+                No invented death stats.
+0:50  Slide 4   "Isn't this Google Maps?" Two columns. Atlas vs officer.
+1:20  Slide 6   Scoring. Four factors. Lowest penalty. Blocked = removed.
+                Critical weights time at 0.55. 10 min vs 11 min example.
+1:55  Slide 7   Block a road, decision changes. Leave this up for the demo.
+2:20  LIVE APP  Dispatcher: Mumbai demo, assign, calculate, start.
+                Admin: Evaluator, Block current route, Run all 4.
+3:20  Slide 10  Trust. Demo simulation labelled. Not municipal feeds.
+                Not a trained model.
+3:40  Slide 12  Close. Google finds the roads. RapidRoute decides how
+                emergency vehicles use them. Stop. Offer questions.
+
+If you only have 2 minutes: 1, 4, 6, 7, live demo, 12.
+
+
+2. SLIDES TO KEEP UP DURING THE LIVE DEMO
+-----------------------------------------
+Slide 5  while you click through create / assign / calculate
+Slide 7  while admin blocks the current route
+Slide 11 while you run the four evaluator scenarios
+
+Do not flip slides while the map is the point. One idea on the projector.
+
+
+3. THREE POINTS JUDGES SHOULD REMEMBER
+--------------------------------------
+1. Google supplies map, geometry, ETA, and alternatives.
+   RapidRoute assigns the unit, scores the options, and logs why.
+
+2. A blocked road is removed before scoring. It is never a trade-off.
+   If nothing remains: "No suitable route available."
+
+3. Scoring is a published weighted formula, not a trained AI model.
+   Admin blockage is labelled DEMO SIMULATION, not a city live feed.
+
+
+4. PRESENTING CHECKLIST
+-----------------------
+[ ] App at http://127.0.0.1:5173  (not localhost if Brave locked HTTPS)
+[ ] Health at http://127.0.0.1:5173/health says database up
+[ ] Postgres running if health is down: sudo pg_ctlcluster 16 main start
+[ ] Fleet free if assign fails: cd backend && npx tsx scripts/reset-demo-fleet.ts
+[ ] Dispatcher login works
+[ ] Admin login works
+[ ] Siren muted for the room if needed
+[ ] Do not open :4000 in Brave
+[ ] Do not claim live van GPS, municipal feeds, or a trained model
+[ ] Do not invent statistics
+[ ] Keys are not on GitHub. Do not paste keys on a slide.
+[ ] Notes view on your laptop. Full screen deck on the projector.
+
+
+5. ACCOUNTS
+-----------
+Dispatcher   dispatcher@rapidroute.local    RapidRoute!dispatch
+Admin        admin@rapidroute.local         RapidRoute!admin

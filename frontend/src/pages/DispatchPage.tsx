@@ -363,7 +363,7 @@ export function DispatchPage() {
     <MapsApiGate>
     <div className="flex h-full min-h-0 overflow-hidden bg-white">
       {leftOpen && (
-        <aside className="hidden h-full w-64 min-w-64 shrink-0 flex-col overflow-hidden border-r border-line bg-white lg:flex">
+        <aside className="hidden h-full w-72 min-w-72 shrink-0 flex-col overflow-x-hidden overflow-y-hidden border-r border-line bg-white lg:flex">
           <IncidentList
             queue={queue}
             selectedId={selectedId}
@@ -569,21 +569,21 @@ function IncidentList({
 }) {
   return (
     <div className="flex h-full min-w-0 w-full flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-3">
-        <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 px-3 py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <h2 className="truncate text-[16px] font-semibold">Incidents</h2>
           <span className="grid h-5 min-w-5 shrink-0 place-items-center bg-critical px-1.5 text-[11px] font-medium text-white">
             {queue.length}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button type="button" className="whitespace-nowrap text-[13px] font-medium text-nav" onClick={onNew}>
+          <button type="button" className="shrink-0 whitespace-nowrap text-[13px] font-medium text-nav" onClick={onNew}>
             New
           </button>
           {onHide && (
             <button
               type="button"
-              className="whitespace-nowrap text-[13px] text-muted"
+              className="shrink-0 whitespace-nowrap text-[13px] text-muted"
               onClick={onHide}
               aria-label="Hide incidents"
             >
@@ -592,7 +592,7 @@ function IncidentList({
           )}
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 pb-4">
         {queue.map((item) => (
           <button
             key={item.id}
@@ -615,11 +615,11 @@ function IncidentList({
             >
               {item.priority === "STANDARD" ? "Normal" : "Critical"}
             </div>
-            <div className="mt-0.5 text-[13px] font-medium">{incidentTitle(item.incidentType, item.notes)}</div>
-            <div className="mt-0.5 text-[12px] text-muted">{item.originLabel}</div>
-            <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
-              <span>{timeAgo(item.createdAt)}</span>
-              <span className="font-mono">{item.code}</span>
+            <div className="mt-0.5 truncate text-[13px] font-medium">{incidentTitle(item.incidentType, item.notes)}</div>
+            <div className="mt-0.5 truncate text-[12px] text-muted">{item.originLabel}</div>
+            <div className="mt-1 flex min-w-0 items-center justify-between gap-2 text-[11px] text-muted">
+              <span className="min-w-0 truncate">{timeAgo(item.createdAt)}</span>
+              <span className="shrink-0 font-mono">{item.code}</span>
             </div>
           </button>
         ))}
