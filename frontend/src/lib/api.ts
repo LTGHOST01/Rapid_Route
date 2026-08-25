@@ -1,4 +1,11 @@
-const BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
+/** Same-origin `/api` so the browser never talks to :4000 (avoids leftover HTTPS/HSTS). */
+export function apiBase() {
+  const fromEnv = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  if (fromEnv && !fromEnv.includes("localhost:4000") && !fromEnv.includes("127.0.0.1:4000")) {
+    return fromEnv.replace(/\/$/, "");
+  }
+  return "/api";
+}
 
 export class ApiError extends Error {
   status: number;
@@ -28,7 +35,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(`${BASE}${path}`, { ...init, headers });
+  const response = await fetch(`${apiBase()}${path}`, { ...init, headers });
   const text = await response.text();
   const data = text ? JSON.parse(text) : null;
 

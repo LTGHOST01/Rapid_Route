@@ -26,6 +26,7 @@ export function AppShell() {
           </div>
           <nav className="flex items-center gap-1 text-[13px]">
             <ShellLink to="/" label="Dispatch" />
+            <ShellLink to="/demo" label="Demo" />
             {user?.role === "ADMIN" && <ShellLink to="/admin" label="Admin" />}
           </nav>
         </div>

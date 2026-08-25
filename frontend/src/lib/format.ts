@@ -27,20 +27,63 @@ export function timeAgo(iso: string): string {
 }
 
 export function incidentTitle(type?: IncidentType, notes?: string): string {
-  if (notes && notes.trim().length > 8 && notes.trim().length < 40) return notes.trim();
+  if (notes && notes.trim().length > 8 && notes.trim().length < 48) return notes.trim();
   switch (type) {
     case "TRAUMA":
-      return "Trauma";
+      return "Trauma — crash / injury";
     case "FIRE":
-      return "Fire incident";
+      return "Fire";
     case "POLICE":
       return "Police incident";
     default:
-      return "Medical emergency";
+      return "Medical — illness";
   }
 }
 
+export function goesToHospital(type?: IncidentType) {
+  return type !== "FIRE" && type !== "POLICE";
+}
+
+export function sameCoords(
+  a?: { lat: number; lng: number } | null,
+  b?: { lat: number; lng: number } | null,
+) {
+  if (!a || !b) return false;
+  return Math.abs(a.lat - b.lat) < 0.0008 && Math.abs(a.lng - b.lng) < 0.0008;
+}
+
+export function pathEnds(
+  emergency: {
+    incidentType?: IncidentType;
+    originLabel: string;
+    destinationLabel: string;
+    originLat: number;
+    originLng: number;
+    destinationLat: number;
+    destinationLng: number;
+    vehicle?: { locationLabel?: string | null; callSign?: string } | null;
+  },
+) {
+  const sceneToScene =
+    !goesToHospital(emergency.incidentType) &&
+    sameCoords(
+      { lat: emergency.originLat, lng: emergency.originLng },
+      { lat: emergency.destinationLat, lng: emergency.destinationLng },
+    );
+  if (sceneToScene) {
+    const from =
+      emergency.vehicle?.locationLabel ||
+      emergency.vehicle?.callSign ||
+      "Assigned unit";
+    return { from, to: emergency.originLabel };
+  }
+  return { from: emergency.originLabel, to: emergency.destinationLabel };
+}
+
 export function priorityShort(priority: Priority): string {
-  if (priority === "STANDARD") return "Medium";
-  return priority.charAt(0) + priority.slice(1).toLowerCase();
+  return priority === "STANDARD" ? "NORMAL" : "CRITICAL";
+}
+
+export function isTimeFirst(priority?: Priority) {
+  return priority !== "STANDARD";
 }

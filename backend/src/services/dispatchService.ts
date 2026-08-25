@@ -88,9 +88,18 @@ export async function createEmergency(
       originLabel: input.originLabel,
       originLat: input.originLat,
       originLng: input.originLng,
-      destinationLabel: input.destinationLabel,
-      destinationLat: input.destinationLat,
-      destinationLng: input.destinationLng,
+      destinationLabel:
+        input.incidentType === "FIRE" || input.incidentType === "POLICE"
+          ? input.destinationLabel || input.originLabel
+          : input.destinationLabel,
+      destinationLat:
+        input.incidentType === "FIRE" || input.incidentType === "POLICE"
+          ? input.destinationLat || input.originLat
+          : input.destinationLat,
+      destinationLng:
+        input.incidentType === "FIRE" || input.incidentType === "POLICE"
+          ? input.destinationLng || input.originLng
+          : input.destinationLng,
       notes: input.notes ?? "",
       createdById,
     },
@@ -130,24 +139,28 @@ export async function assignVehicle(emergencyId: string, vehicleId?: string) {
     throw new BadRequestError(`${vehicle.callSign} is not available`);
   }
 
-  if (emergency.vehicle) {
-    await prisma.emergencyVehicle.update({
-      where: { id: emergency.vehicle.id },
-      data: { status: "AVAILABLE", assignedEmergencyId: null },
-    });
-  }
+  const updated = await prisma.$transaction(async (tx) => {
+    if (emergency.vehicle) {
+      await tx.emergencyVehicle.update({
+        where: { id: emergency.vehicle.id },
+        data: { status: "AVAILABLE", assignedEmergencyId: null },
+      });
+    }
 
-  const [updated] = await prisma.$transaction([
-    prisma.emergency.update({
+    const claimed = await tx.emergencyVehicle.updateMany({
+      where: { id: vehicle.id, status: "AVAILABLE" },
+      data: { status: "ASSIGNED", assignedEmergencyId: emergencyId },
+    });
+    if (claimed.count !== 1) {
+      throw new BadRequestError(`${vehicle.callSign} was just assigned to another incident`);
+    }
+
+    return tx.emergency.update({
       where: { id: emergencyId },
       data: { status: emergency.status === "OPEN" ? "ASSIGNED" : emergency.status },
       include: { vehicle: true },
-    }),
-    prisma.emergencyVehicle.update({
-      where: { id: vehicle.id },
-      data: { status: "ASSIGNED", assignedEmergencyId: emergencyId },
-    }),
-  ]);
+    });
+  });
 
   const withVehicle = await prisma.emergency.findUnique({
     where: { id: updated.id },
@@ -182,10 +195,12 @@ export async function calculateRoutes(emergencyId: string, forceDemo = false) {
   const rawRoutes = usingDemo ? buildDemoCandidates(origin, destination) : computed.routes;
   const conditions = await getActiveRoadConditions();
 
-  const tagged = rawRoutes.map((route) => {
-    const impact = tagRouteWithConditions(route, conditions);
-    return { ...route, ...impact };
-  });
+  const tagged = await Promise.all(
+    rawRoutes.map(async (route) => {
+      const impact = await tagRouteWithConditions(route, conditions);
+      return { ...route, ...impact };
+    }),
+  );
 
   const scored = scoreCandidates(tagged, emergency.priority);
   const winner = pickWinner(scored);

@@ -528,7 +528,7 @@ function EvalAdmin() {
   });
   const runAll = useMutation({
     mutationFn: () =>
-      api<{ results: ScenarioRun[] }>("/eval/run-all"),
+      api<{ results: ScenarioRun[] }>("/eval/run-all", { method: "GET" }),
   });
   const live = useMutation({
     mutationFn: (status: "CLEAR" | "CONGESTED" | "BLOCKED") =>

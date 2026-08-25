@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AnimatePresence, motion } from "framer-motion";
 import { ChevronDown, MapPin, Menu, Play, X } from "lucide-react";
-import { api, ApiError } from "../lib/api";
+import { api, apiBase, ApiError, getToken } from "../lib/api";
+import { isSirenMuted, previewSiren, setSirenMuted, sirenLabel, startSiren, stopSiren, type SirenKind } from "../lib/sirens";
 import {
   MUMBAI_DEMO,
+  MUMBAI_FIRE_DEMO,
+  MUMBAI_FIRE_SCENES,
   MUMBAI_HOSPITALS,
   MUMBAI_ORIGINS,
   type HospitalPlace,
@@ -13,7 +16,15 @@ import {
   type LatLng,
 } from "../lib/geo";
 import { roadLabel, trafficLabel } from "../lib/labels";
-import { displayScore, factorScore, formatDuration, incidentTitle, priorityShort, timeAgo } from "../lib/format";
+import {
+  displayScore,
+  factorScore,
+  formatDuration,
+  goesToHospital,
+  incidentTitle,
+  pathEnds,
+  timeAgo,
+} from "../lib/format";
 import { Button, Field, inputClass, StatusChip, roadTone, trafficTone } from "../components/ui";
 import { DispatchMap, MapsApiGate } from "../components/map/DispatchMap";
 import { PlaceSearch } from "../components/map/PlaceSearch";
@@ -60,7 +71,8 @@ export function DispatchPage() {
   const [ackRerouteId, setAckRerouteId] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [whyOpen, setWhyOpen] = useState(false);
+  const [whyOpen, setWhyOpen] = useState(true);
+  const [sirenMuted, setSirenMutedState] = useState(isSirenMuted);
 
   const emergencies = useQuery({
     queryKey: ["emergencies"],
@@ -77,6 +89,7 @@ export function DispatchPage() {
     queryFn: () =>
       api<{
         hospitals: HospitalPlace[];
+        fireScenes?: HospitalPlace[];
         origins: Array<{ id: string; label: string; lat: number; lng: number }>;
       }>("/catalog/locations"),
   });
@@ -96,24 +109,38 @@ export function DispatchPage() {
     queryKey: ["journey", journeyId],
     enabled: Boolean(journeyId),
     queryFn: () => api<JourneyDetail>(`/journeys/${journeyId}`),
-    refetchInterval: 2500,
+    refetchInterval: (query) =>
+      query.state.data?.journey.status === "ACTIVE" ? 4000 : false,
   });
 
   useEffect(() => {
     if (!journeyId || journey.data?.journey.status !== "ACTIVE") return;
-    const timer = setInterval(async () => {
+    const base = apiBase();
+    const token = getToken() ?? "";
+    const source = new EventSource(
+      `${base}/journeys/${journeyId}/live?token=${encodeURIComponent(token)}`,
+    );
+    source.addEventListener("tick", (event) => {
       try {
-        const next = await api<JourneyDetail>(`/journeys/${journeyId}/tick`, {
-          method: "POST",
-          body: JSON.stringify({ steps: 1 }),
-        });
-        qc.setQueryData(["journey", journeyId], next);
+        qc.setQueryData(["journey", journeyId], JSON.parse((event as MessageEvent).data));
       } catch {
-        /* completed */
+        /* ignore malformed frames */
       }
-    }, 4000);
-    return () => clearInterval(timer);
+    });
+    source.onerror = () => {
+      source.close();
+    };
+    return () => source.close();
   }, [journeyId, journey.data?.journey.status, qc]);
+
+  useEffect(() => {
+    const active = journey.data?.journey.status === "ACTIVE";
+    const kind = journey.data?.vehicle.type as SirenKind | undefined;
+    if (active && kind) startSiren(kind);
+    else stopSiren();
+  }, [journey.data?.journey.status, journey.data?.vehicle.type]);
+
+  useEffect(() => () => stopSiren(), []);
 
   const createEmergency = useMutation({
     mutationFn: () =>
@@ -125,9 +152,13 @@ export function DispatchPage() {
           originLabel: form.originLabel,
           originLat: Number(form.originLat),
           originLng: Number(form.originLng),
-          destinationLabel: form.destinationLabel,
-          destinationLat: Number(form.destinationLat),
-          destinationLng: Number(form.destinationLng),
+          destinationLabel: goesToHospital(form.incidentType)
+            ? form.destinationLabel
+            : form.destinationLabel && form.destinationLabel !== form.originLabel
+              ? form.destinationLabel
+              : "Fire scene",
+          destinationLat: Number(form.destinationLat || form.originLat),
+          destinationLng: Number(form.destinationLng || form.originLng),
           notes: form.notes,
         }),
       }),
@@ -238,17 +269,17 @@ export function DispatchPage() {
     setForm(emptyForm);
   }
 
-  function applyDemoPreset() {
+  function applyDemoPreset(preset: typeof MUMBAI_DEMO | typeof MUMBAI_FIRE_DEMO) {
     setForm({
-      incidentType: MUMBAI_DEMO.incidentType,
-      priority: MUMBAI_DEMO.priority,
-      originLabel: MUMBAI_DEMO.originLabel,
-      originLat: String(MUMBAI_DEMO.originLat),
-      originLng: String(MUMBAI_DEMO.originLng),
-      destinationLabel: MUMBAI_DEMO.destinationLabel,
-      destinationLat: String(MUMBAI_DEMO.destinationLat),
-      destinationLng: String(MUMBAI_DEMO.destinationLng),
-      notes: MUMBAI_DEMO.notes,
+      incidentType: preset.incidentType,
+      priority: preset.priority,
+      originLabel: preset.originLabel,
+      originLat: String(preset.originLat),
+      originLng: String(preset.originLng),
+      destinationLabel: preset.destinationLabel,
+      destinationLat: String(preset.destinationLat),
+      destinationLng: String(preset.destinationLng),
+      notes: preset.notes,
     });
     setCreating(true);
     setSelectedId(null);
@@ -260,13 +291,21 @@ export function DispatchPage() {
     if (!creating || !pinMode) return;
     const mode = pinMode;
     if (mode === "origin") {
-      setForm((f) => ({
-        ...f,
-        originLat: point.lat.toFixed(5),
-        originLng: point.lng.toFixed(5),
-        originLabel: f.originLabel || "Dropped pin",
-      }));
-      setPinMode("destination");
+      setForm((f) => {
+        const next = {
+          ...f,
+          originLat: point.lat.toFixed(5),
+          originLng: point.lng.toFixed(5),
+          originLabel: f.originLabel || "Dropped pin",
+        };
+        if (!goesToHospital(f.incidentType)) {
+          next.destinationLat = next.originLat;
+          next.destinationLng = next.originLng;
+          next.destinationLabel = "Fire scene";
+        }
+        return next;
+      });
+      setPinMode(goesToHospital(form.incidentType) ? "destination" : null);
     } else {
       setForm((f) => ({
         ...f,
@@ -279,43 +318,66 @@ export function DispatchPage() {
     void reverseGeocode(point).then((label) => {
       setForm((f) =>
         mode === "origin"
-          ? { ...f, originLabel: label, originLat: point.lat.toFixed(5), originLng: point.lng.toFixed(5) }
+          ? {
+              ...f,
+              originLabel: label,
+              originLat: point.lat.toFixed(5),
+              originLng: point.lng.toFixed(5),
+              ...(!goesToHospital(f.incidentType)
+                ? { destinationLabel: "Fire scene", destinationLat: point.lat.toFixed(5), destinationLng: point.lng.toFixed(5) }
+                : {}),
+            }
           : { ...f, destinationLabel: label, destinationLat: point.lat.toFixed(5), destinationLng: point.lng.toFixed(5) },
       );
     });
   }
 
-  const mapVehicles = useMemo(() => vehicles.data?.vehicles ?? [], [vehicles.data]);
-
   const originOptions = catalog.data?.origins ?? MUMBAI_ORIGINS;
   const hospitalOptions = catalog.data?.hospitals ?? MUMBAI_HOSPITALS;
+  const fireSceneOptions = catalog.data?.fireScenes ?? MUMBAI_FIRE_SCENES;
+  const activeType = creating ? form.incidentType : emergency?.incidentType;
+  const hospitalBound = goesToHospital(activeType);
+  const mapHospitals = hospitalBound ? hospitalOptions : [];
+  const destinationKind = hospitalBound ? "hospital" : "scene";
+
+  const mapVehicles = useMemo(() => {
+    const all = vehicles.data?.vehicles ?? [];
+    const assignedId = emergency?.vehicle?.id ?? journey.data?.vehicle.id;
+    const wanted =
+      !goesToHospital(activeType) && activeType === "POLICE"
+        ? "POLICE"
+        : !goesToHospital(activeType)
+          ? "FIRE"
+          : "AMBULANCE";
+    return all.filter((vehicle) => {
+      if (vehicle.status === "INACTIVE") return false;
+      if (assignedId && vehicle.id === assignedId) return true;
+      if (vehicle.type !== wanted) return false;
+      if (vehicle.status === "ASSIGNED") return false;
+      if (!mapOrigin) return vehicle.status === "AVAILABLE";
+      return Math.hypot(vehicle.latitude - mapOrigin.lat, vehicle.longitude - mapOrigin.lng) < 0.055;
+    });
+  }, [vehicles.data, emergency?.vehicle?.id, journey.data?.vehicle.id, mapOrigin, activeType]);
 
   return (
     <MapsApiGate>
-    <div className="flex h-full bg-soft">
-      <AnimatePresence initial={false}>
-        {leftOpen && (
-          <motion.aside
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 288, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="hidden h-full shrink-0 overflow-hidden border-r border-line bg-white lg:block"
-          >
-            <IncidentList
-              queue={queue}
-              selectedId={selectedId}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setCreating(false);
-                setAckRerouteId(null);
-                setRightOpen(true);
-              }}
-              onNew={startNew}
-            />
-          </motion.aside>
-        )}
-      </AnimatePresence>
+    <div className="flex h-full min-h-0 overflow-hidden bg-white">
+      {leftOpen && (
+        <aside className="hidden h-full w-64 shrink-0 flex-col overflow-hidden border-r border-line bg-white lg:flex">
+          <IncidentList
+            queue={queue}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setCreating(false);
+              setAckRerouteId(null);
+              setRightOpen(true);
+            }}
+            onNew={startNew}
+            onHide={() => setLeftOpen(false)}
+          />
+        </aside>
+      )}
 
       <main className="relative min-h-0 min-w-0 flex-1">
         <DispatchMap
@@ -324,6 +386,7 @@ export function DispatchPage() {
           destination={mapDestination}
           candidates={routeRequest?.candidates}
           selectedId={selectedCandidateId}
+          selectedVehicleId={emergency?.vehicle?.id ?? journey.data?.vehicle.id ?? null}
           vehiclePosition={vehiclePosition}
           movingVehicle={
             journey.data
@@ -333,17 +396,38 @@ export function DispatchPage() {
                   status: journey.data.journey.status === "ACTIVE" ? "EN ROUTE" : journey.data.journey.status,
                   type: journey.data.vehicle.type,
                 }
-              : null
+              : emergency?.vehicle
+                ? {
+                    id: emergency.vehicle.id,
+                    callSign: emergency.vehicle.callSign,
+                    status: emergency.vehicle.status,
+                    type: emergency.vehicle.type,
+                  }
+                : null
           }
-          hospitals={hospitalOptions}
+          hospitals={mapHospitals}
+          destinationKind={destinationKind}
           roadConditions={roads.data?.roadConditions}
           onMapClick={onMapClick}
           pinMode={creating ? pinMode : null}
+          onVehicleClick={(vehicle) => previewSiren(vehicle.type as SirenKind)}
+          sirenMuted={sirenMuted}
+          onToggleSiren={() => {
+            const next = !sirenMuted;
+            setSirenMuted(next);
+            setSirenMutedState(next);
+          }}
+          sirenHint={
+            journey.data?.journey.status === "ACTIVE" && journey.data.vehicle.type
+              ? sirenLabel(journey.data.vehicle.type as SirenKind)
+              : undefined
+          }
         />
 
+        {!leftOpen && (
         <button
-          className="absolute left-3 top-3 z-20 hidden h-9 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] shadow-sm lg:flex"
-          onClick={() => setLeftOpen((v) => !v)}
+          className="absolute left-3 top-3 z-20 flex h-9 items-center gap-2 rounded-lg border border-line bg-white px-3 text-[13px] shadow-sm"
+          onClick={() => setLeftOpen(true)}
         >
           <Menu size={15} />
           Incidents
@@ -351,6 +435,7 @@ export function DispatchPage() {
             {queue.length}
           </span>
         </button>
+        )}
 
         <button
           className="absolute right-3 top-3 z-20 lg:hidden rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] shadow-sm"
@@ -365,16 +450,9 @@ export function DispatchPage() {
           </div>
         )}
 
-        <AnimatePresence>
-          {journey.data?.events.find((event) => event.type === "REROUTED") &&
-            ackRerouteId !== journey.data.events.find((event) => event.type === "REROUTED")?.id && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.35 }}
-              className="absolute left-1/2 top-3 z-30 w-[min(420px,calc(100%-24px))] -translate-x-1/2 rounded-xl border border-amber-200 bg-white p-3 shadow-md"
-            >
+        {journey.data?.events.find((event) => event.type === "REROUTED") &&
+          ackRerouteId !== journey.data.events.find((event) => event.type === "REROUTED")?.id && (
+          <div className="absolute left-1/2 top-3 z-30 w-[min(380px,calc(100%-24px))] -translate-x-1/2 border border-amber-200 bg-white p-3 shadow-sm">
               <div className="text-[12px] font-semibold text-amber-700">Route updated</div>
               <p className="mt-1 text-[13px] text-ink">
                 Road blockage detected. RapidRoute selected an alternate route.
@@ -387,29 +465,13 @@ export function DispatchPage() {
               >
                 Acknowledge
               </button>
-            </motion.div>
+            </div>
           )}
-        </AnimatePresence>
 
-        {routeRequest && explanation && !creating && (
-          <WhyCard
-            explanation={explanation}
-            recommended={recommended}
-            open={whyOpen}
-            onToggle={() => setWhyOpen((v) => !v)}
-          />
-        )}
       </main>
 
-      <AnimatePresence initial={false}>
-        {rightOpen && (
-          <motion.aside
-            initial={{ x: 24, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 24, opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="absolute inset-x-0 bottom-0 z-20 max-h-[58%] overflow-y-auto border-t border-line bg-white lg:static lg:z-0 lg:h-full lg:w-[360px] lg:max-h-none lg:shrink-0 lg:border-l lg:border-t-0"
-          >
+      {rightOpen && (
+          <aside className="absolute inset-x-0 bottom-0 z-20 flex max-h-[52%] flex-col overflow-hidden border-t border-line bg-white lg:static lg:z-0 lg:h-full lg:max-h-none lg:w-[320px] lg:shrink-0 lg:border-l lg:border-t-0">
             <div className="flex items-center justify-between border-b border-line px-5 py-3 lg:hidden">
               <span className="text-[13px] font-medium">Dispatch</span>
               <button onClick={() => setRightOpen(false)}>
@@ -436,8 +498,9 @@ export function DispatchPage() {
               </select>
             </div>
 
-            {error && <div className="bg-red-50 px-5 py-2 text-[13px] text-critical">{error}</div>}
+            {error && <div className="bg-red-50 px-4 py-2 text-[13px] text-critical">{error}</div>}
 
+            <div className="min-h-0 flex-1 overflow-y-auto">
             {creating && (
               <NewEmergencyForm
                 form={form}
@@ -446,11 +509,17 @@ export function DispatchPage() {
                 setPinMode={setPinMode}
                 origins={originOptions}
                 hospitals={hospitalOptions}
+                fireScenes={fireSceneOptions}
                 pending={createEmergency.isPending}
-                onDemo={applyDemoPreset}
+                onAmbulanceDemo={() => applyDemoPreset(MUMBAI_DEMO)}
+                onFireDemo={() => applyDemoPreset(MUMBAI_FIRE_DEMO)}
                 onSubmit={() => {
-                  if (!form.originLat || !form.destinationLat) {
-                    setError("Origin and destination are required");
+                  if (!form.originLat) {
+                    setError("Scene location is required");
+                    return;
+                  }
+                  if (goesToHospital(form.incidentType) && !form.destinationLat) {
+                    setError("Hospital is required for ambulance jobs");
                     return;
                   }
                   createEmergency.mutate();
@@ -469,15 +538,17 @@ export function DispatchPage() {
                 journey={journey.data}
                 calculating={calculateRoutes.isPending}
                 dispatching={dispatch.isPending}
+                whyOpen={whyOpen}
+                onToggleWhy={() => setWhyOpen((v) => !v)}
                 onAssign={(id) => assignVehicle.mutate(id)}
                 onCalculate={() => calculateRoutes.mutate()}
                 onSelect={(id) => selectRoute.mutate(id)}
                 onStart={() => dispatch.mutate(undefined)}
               />
             )}
-          </motion.aside>
-        )}
-      </AnimatePresence>
+            </div>
+          </aside>
+      )}
     </div>
     </MapsApiGate>
   );
@@ -488,24 +559,33 @@ function IncidentList({
   selectedId,
   onSelect,
   onNew,
+  onHide,
 }: {
   queue: Emergency[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onNew: () => void;
+  onHide?: () => void;
 }) {
   return (
     <div className="flex h-full w-72 flex-col">
-      <div className="flex items-center justify-between px-4 py-4">
+      <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           <h2 className="text-[16px] font-semibold">Incidents</h2>
           <span className="grid h-5 min-w-5 place-items-center bg-critical px-1.5 text-[11px] font-medium text-white">
             {queue.length}
           </span>
         </div>
-        <button className="text-[13px] font-medium text-nav" onClick={onNew}>
-          New
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="text-[13px] font-medium text-nav" onClick={onNew}>
+            New
+          </button>
+          {onHide && (
+            <button className="text-[13px] text-muted" onClick={onHide} aria-label="Hide incidents">
+              Hide
+            </button>
+          )}
+        </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
         {queue.map((item) => (
@@ -513,7 +593,7 @@ function IncidentList({
             key={item.id}
             onClick={() => onSelect(item.id)}
             className={cn(
-              "mb-2 w-full rounded-xl border bg-white px-3 py-2.5 text-left",
+              "mb-1.5 w-full border bg-white px-3 py-2 text-left",
               selectedId === item.id ? "border-slate-300 shadow-sm" : "border-line hover:border-slate-300",
               item.priority === "CRITICAL" && "border-l-[3px] border-l-critical",
               item.priority === "HIGH" && "border-l-[3px] border-l-amber-500",
@@ -528,7 +608,7 @@ function IncidentList({
                 item.priority === "STANDARD" && "text-slate-500",
               )}
             >
-              {priorityShort(item.priority).toUpperCase()}
+              {item.priority === "STANDARD" ? "Normal" : "Critical"}
             </div>
             <div className="mt-0.5 text-[13px] font-medium">{incidentTitle(item.incidentType, item.notes)}</div>
             <div className="mt-0.5 text-[12px] text-muted">{item.originLabel}</div>
@@ -540,6 +620,9 @@ function IncidentList({
         ))}
         {queue.length === 0 && <p className="px-1 py-8 text-[13px] text-muted">No incidents yet.</p>}
       </div>
+      <Link to="/demo" className="border-t border-line px-4 py-2 text-[12px] text-nav">
+        Official scenarios →
+      </Link>
     </div>
   );
 }
@@ -551,8 +634,10 @@ function NewEmergencyForm({
   setPinMode,
   origins,
   hospitals,
+  fireScenes,
   pending,
-  onDemo,
+  onAmbulanceDemo,
+  onFireDemo,
   onSubmit,
 }: {
   form: typeof emptyForm;
@@ -561,62 +646,119 @@ function NewEmergencyForm({
   setPinMode: (mode: "origin" | "destination" | null) => void;
   origins: Array<{ id: string; label: string; lat: number; lng: number }>;
   hospitals: HospitalPlace[];
+  fireScenes: HospitalPlace[];
   pending: boolean;
-  onDemo: () => void;
+  onAmbulanceDemo: () => void;
+  onFireDemo: () => void;
   onSubmit: () => void;
 }) {
+  const toHospital = goesToHospital(form.incidentType);
+  const destSuggestions = toHospital ? hospitals : fireScenes;
+
+  function changeType(nextType: IncidentType) {
+    setForm((f) => {
+      const next = { ...f, incidentType: nextType };
+      if (!goesToHospital(nextType)) {
+        next.destinationLabel = "Fire scene";
+        next.destinationLat = f.originLat;
+        next.destinationLng = f.originLng;
+      } else if (f.destinationLabel === f.originLabel) {
+        next.destinationLabel = "";
+        next.destinationLat = "";
+        next.destinationLng = "";
+      }
+      return next;
+    });
+  }
+
   return (
     <div>
-      <div className="flex items-center justify-between px-5 pt-5">
-        <h2 className="text-[16px] font-bold">New incident</h2>
-        <button className="text-[12px] font-medium text-nav" onClick={onDemo}>
-          Mumbai demo
-        </button>
+      <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+        <h2 className="text-[14px] font-semibold">New incident</h2>
+        <div className="flex gap-2 text-[12px]">
+          <button className="font-medium text-nav" onClick={onAmbulanceDemo}>Ambulance</button>
+          <button className="font-medium text-nav" onClick={onFireDemo}>Fire</button>
+          <Link to="/demo" className="font-medium text-nav">Scenarios</Link>
+        </div>
       </div>
-      <div className="space-y-3 px-5 py-4">
+      <div className="space-y-3 px-4 py-3">
         <Field label="Emergency Type">
           <select
             className={inputClass()}
             value={form.incidentType}
-            onChange={(e) => setForm((f) => ({ ...f, incidentType: e.target.value as IncidentType }))}
+            onChange={(e) => changeType(e.target.value as IncidentType)}
           >
-            <option value="MEDICAL">Medical</option>
-            <option value="TRAUMA">Trauma</option>
-            <option value="FIRE">Fire</option>
+            <option value="MEDICAL">Medical — illness</option>
+            <option value="TRAUMA">Trauma — crash / injury</option>
+            <option value="FIRE">Fire — building / vehicle</option>
             <option value="POLICE">Police</option>
           </select>
+          <p className="mt-1 text-[11px] text-muted">
+            {form.incidentType === "FIRE"
+              ? "Engine goes to the fire, not a hospital."
+              : form.incidentType === "TRAUMA"
+                ? "Crash / bleeding → trauma hospital."
+                : form.incidentType === "POLICE"
+                  ? "Unit goes to the scene."
+                  : "Illness → hospital."}
+          </p>
         </Field>
-        <Field label="Priority">
-          <select
-            className={inputClass()}
-            value={form.priority}
-            onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value as Priority }))}
-          >
-            <option value="CRITICAL">Critical</option>
-            <option value="HIGH">High</option>
-            <option value="STANDARD">Medium</option>
-          </select>
-        </Field>
-        <Field label="Origin">
+        <div>
+          <div className="mb-1 text-[12px] font-medium text-muted">Priority</div>
+          <div className="flex border border-line">
+            <button
+              type="button"
+              className={cn(
+                "flex-1 py-1.5 text-[13px]",
+                form.priority !== "STANDARD" ? "bg-critical text-white" : "bg-white text-muted",
+              )}
+              onClick={() => setForm((f) => ({ ...f, priority: "CRITICAL" }))}
+            >
+              Critical
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "flex-1 border-l border-line py-1.5 text-[13px]",
+                form.priority === "STANDARD" ? "bg-ink text-white" : "bg-white text-muted",
+              )}
+              onClick={() => setForm((f) => ({ ...f, priority: "STANDARD" }))}
+            >
+              Normal
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-muted">
+            {form.priority === "STANDARD" ? "Balanced score." : "Time matters most."}
+          </p>
+        </div>
+        <Field label={toHospital ? "Scene" : "Fire / scene"}>
           <PlaceSearch
             value={form.originLabel}
-            placeholder="Search any Mumbai locality or address"
-            suggestions={origins}
+            placeholder="Search the incident location"
+            suggestions={toHospital ? origins : [...fireScenes, ...origins]}
             onSelect={(place) =>
               setForm((f) => ({
                 ...f,
                 originLabel: place.label,
                 originLat: String(place.lat),
                 originLng: String(place.lng),
+                ...(!goesToHospital(f.incidentType)
+                  ? {
+                      destinationLabel: "Fire scene",
+                      destinationLat: String(place.lat),
+                      destinationLng: String(place.lng),
+                    }
+                  : {}),
               }))
             }
           />
         </Field>
-        <Field label="Destination">
+        {toHospital && (
+        <Field label="Hospital">
           <PlaceSearch
             value={form.destinationLabel}
-            placeholder="Search a hospital or type an address"
-            suggestions={hospitals}
+            placeholder="Search a hospital"
+            suggestions={destSuggestions}
             onSelect={(place) =>
               setForm((f) => ({
                 ...f,
@@ -627,13 +769,16 @@ function NewEmergencyForm({
             }
           />
         </Field>
+        )}
         <div className="flex gap-2">
           <Button type="button" variant={pinMode === "origin" ? "primary" : "ghost"} className="flex-1" onClick={() => setPinMode("origin")}>
-            <MapPin size={14} /> Pin origin
+            <MapPin size={14} /> Pin scene
           </Button>
+          {toHospital && (
           <Button type="button" variant={pinMode === "destination" ? "primary" : "ghost"} className="flex-1" onClick={() => setPinMode("destination")}>
             <MapPin size={14} /> Pin hospital
           </Button>
+          )}
         </div>
         <Button className="w-full" disabled={pending} onClick={onSubmit}>
           {pending ? "Creating…" : "Create emergency"}
@@ -649,10 +794,12 @@ function ContextPanel({
   routeRequest,
   recommended,
   alternatives,
-  explanation: _explanation,
+  explanation,
   journey,
   calculating,
   dispatching,
+  whyOpen,
+  onToggleWhy,
   onAssign,
   onCalculate,
   onSelect,
@@ -667,23 +814,40 @@ function ContextPanel({
   journey?: JourneyDetail;
   calculating: boolean;
   dispatching: boolean;
+  whyOpen: boolean;
+  onToggleWhy: () => void;
   onAssign: (id?: string) => void;
   onCalculate: () => void;
   onSelect: (id: string) => void;
   onStart: () => void;
 }) {
   const recScore = displayScore(recommended?.score);
+  const path = pathEnds(emergency);
+  const typeLabel =
+    emergency.incidentType === "FIRE"
+      ? "Fire"
+      : emergency.incidentType === "TRAUMA"
+        ? "Trauma"
+        : emergency.incidentType === "POLICE"
+          ? "Police"
+          : "Medical";
   return (
-    <div className="pb-6">
-      <div className="px-5 pt-5">
-        <div className="text-[12px] text-muted">{emergency.code}</div>
-        <h2 className="mt-0.5 text-[18px] font-semibold">
-          {incidentTitle(emergency.incidentType, emergency.notes)}
-        </h2>
-        <p className="mt-1 text-[13px] text-muted">
-          {emergency.originLabel} → {emergency.destinationLabel}
-        </p>
-      </div>
+    <div className="pb-4">
+      <section className="border-b border-line px-4 py-3">
+        <div className="text-[11px] font-semibold tracking-wide text-muted">INCIDENT</div>
+        <div className="mt-1 text-[13px] font-semibold">{typeLabel}</div>
+        <div className="mt-2 grid grid-cols-[72px_1fr] gap-y-1 text-[12px]">
+          <span className="text-muted">Priority</span>
+          <span className={emergency.priority === "STANDARD" ? "" : "font-medium text-critical"}>
+            {emergency.priority === "STANDARD" ? "Normal" : "Critical"}
+          </span>
+          <span className="text-muted">Origin</span>
+          <span>{path.from}</span>
+          <span className="text-muted">Destination</span>
+          <span>{path.to}</span>
+        </div>
+        <div className="mt-2 font-mono text-[11px] text-muted">{emergency.code}</div>
+      </section>
 
       {routeRequest?.selection == null && routeRequest?.candidates?.every((c) => c.blocked) && (
         <div className="mx-5 mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-critical">
@@ -722,117 +886,104 @@ function ContextPanel({
       )}
 
       {recommended && (
-        <div className="px-5 pt-5">
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[15px] font-semibold">Recommended Route</h3>
-            <StatusChip tone="clear">Best</StatusChip>
-          </div>
-          <div className="border border-line p-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-[22px] font-bold leading-none tabular">{recommended.etaLabel}</div>
-                <div className="mt-1 text-[13px] text-muted">
-                  {recommended.distanceLabel}
-                  {journey?.journey.estimatedArrivalAt
-                    ? ` · ETA ${formatEtaClock(journey.journey.estimatedArrivalAt)}`
-                    : ""}
-                </div>
-              </div>
-              {recScore != null && <ScoreRing value={recScore} />}
+        <section className="border-b border-line px-4 py-3">
+          <div className="text-[11px] font-semibold tracking-wide text-muted">RECOMMENDED ROUTE</div>
+          <div className="mt-2 flex items-start justify-between">
+            <div>
+              <div className="text-[20px] font-semibold tabular leading-none">{recommended.etaLabel}</div>
+              <div className="mt-1 text-[12px] text-muted">{recommended.distanceLabel}</div>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2 text-[12px]">
-              <Metric label="Traffic" value={trafficLabel(recommended.trafficLevel)} tone={trafficTone(recommended.trafficLevel)} />
-              <Metric label="Road Status" value={roadLabel(recommended.roadImpact)} tone={roadTone(recommended.roadImpact)} />
-              <Metric label="Priority" value={priorityShort(emergency.priority)} tone="nav" />
+            <div className="text-right">
+              <div className="text-[11px] text-muted">Score</div>
+              <div className="text-[20px] font-semibold tabular">{recScore ?? "—"}</div>
             </div>
-            {emergency.status !== "DISPATCHED" && emergency.status !== "COMPLETED" && (
-              <Button className="mt-4 w-full" disabled={dispatching || recommended.blocked} onClick={onStart}>
-                <Play size={14} fill="currentColor" /> Start Journey
-              </Button>
-            )}
           </div>
-        </div>
+          <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[12px]">
+            <Metric label="Traffic" value={trafficLabel(recommended.trafficLevel)} tone={trafficTone(recommended.trafficLevel)} />
+            <Metric label="Road status" value={roadLabel(recommended.roadImpact)} tone={roadTone(recommended.roadImpact)} />
+            <Metric
+              label="Priority match"
+              value={emergency.priority === "STANDARD" ? "Normal" : "Critical · time first"}
+              tone={emergency.priority === "STANDARD" ? "neutral" : "critical"}
+            />
+            {routeRequest?.dataSourceLabel === "GOOGLE ROUTES" ? (
+              <Metric label="Source" value="Google Routes" tone="nav" />
+            ) : routeRequest?.dataSourceLabel ? (
+              <Metric label="Source" value="Demo simulation" tone="warning" />
+            ) : null}
+          </div>
+          {emergency.status !== "DISPATCHED" && emergency.status !== "COMPLETED" && (
+            <Button className="mt-3 w-full" disabled={dispatching || recommended.blocked} onClick={onStart}>
+              <Play size={14} fill="currentColor" /> Start Journey
+            </Button>
+          )}
+        </section>
       )}
 
       {alternatives.length > 0 && (
-        <div className="px-5 pt-5">
-          <h3 className="mb-2 text-[13px] font-medium text-muted">Alternative Routes</h3>
-          <div className="space-y-2">
-            {alternatives.map((candidate) => (
+        <section className="border-b border-line px-4 py-3">
+          <div className="text-[11px] font-semibold tracking-wide text-muted">ALTERNATIVE ROUTES</div>
+          <div className="mt-2 space-y-1.5">
+            {alternatives.map((candidate, index) => (
               <button
                 key={candidate.id}
                 disabled={candidate.blocked}
                 onClick={() => onSelect(candidate.id)}
-                className="flex w-full items-center justify-between rounded-xl border border-line px-3 py-2.5 text-left disabled:opacity-50"
+                className="flex w-full items-center justify-between border border-line px-2.5 py-2 text-left disabled:opacity-50"
               >
                 <div>
-                  <div className="text-[15px] font-semibold">{candidate.etaLabel}</div>
-                  <div className="text-[12px] text-muted">
+                  <div className="text-[13px] font-medium">
+                    Route {index + 2} · {candidate.etaLabel}
+                  </div>
+                  <div className="text-[11px] text-muted">
                     {candidate.distanceLabel}
                     {candidate.blocked ? " · Blocked" : ""}
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-[11px] text-muted">Score</div>
-                  <div className="text-[16px] font-semibold tabular">{displayScore(candidate.score) ?? "—"}</div>
-                </div>
+                <div className="text-right text-[13px] tabular">{displayScore(candidate.score) ?? "—"}</div>
               </button>
             ))}
           </div>
-        </div>
+        </section>
       )}
 
-      {routeRequest && (
-        <p className="px-5 pt-3 text-[11px] text-muted">
-          {routeRequest.dataSourceLabel === "GOOGLE ROUTES" ? "Live Google Routes" : "DEMO SIMULATION"}
-        </p>
+      {explanation && (
+        <WhyBlock
+          explanation={explanation}
+          recommended={recommended}
+          open={whyOpen}
+          onToggle={onToggleWhy}
+        />
       )}
 
       {journey && (
-        <div className="mt-4 border-t border-line px-5 pt-4">
-          <div className="flex items-end justify-between">
-            <div>
-              <div className="text-[12px] text-muted">
-                {journey.vehicle.callSign}
-                {journey.journey.currentRouteLabel ? ` · ${journey.journey.currentRouteLabel}` : ""}
-              </div>
-              <div className="mt-1 text-[22px] font-bold tabular">
-                {formatDuration(journey.journey.routeEtaSeconds ?? journey.journey.remainingSeconds ?? 0)}
-              </div>
-              <div className="text-[12px] text-muted">
-                Arrives {formatEtaClock(journey.journey.estimatedArrivalAt)}
-                {journey.journey.remainingMeters != null
-                  ? ` · ${((journey.journey.remainingMeters ?? 0) / 1000).toFixed(1)} km along route`
-                  : ""}
-                <span className="block text-[11px]">
-                  Simulated movement — selected route duration stays at dispatch
-                </span>
-              </div>
+        <section className="border-t border-line px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="text-[12px] text-muted">
+              {journey.vehicle.callSign}
+              {journey.journey.currentRouteLabel ? ` · ${journey.journey.currentRouteLabel}` : ""}
             </div>
             <StatusChip tone={journey.journey.status === "ACTIVE" ? "clear" : "neutral"}>
               {journey.journey.status === "ACTIVE" ? "En route" : journey.journey.status.toLowerCase()}
             </StatusChip>
           </div>
-          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <motion.div
-              className="h-full bg-nav"
-              animate={{ width: `${Math.round(journey.journey.progress * 100)}%` }}
-              transition={{ duration: 0.35 }}
-            />
+          <div className="mt-1 text-[16px] font-semibold tabular">
+            {formatDuration(journey.journey.routeEtaSeconds ?? journey.journey.remainingSeconds ?? 0)}
+            {journey.journey.estimatedArrivalAt ? ` · ${formatEtaClock(journey.journey.estimatedArrivalAt)}` : ""}
           </div>
-          <p className="mt-3 text-[11px] text-muted">
-            Road blockage is an admin action. Ask an admin to run a live simulation from
-            Admin → Evaluator.
-          </p>
-          <ol className="mt-4 space-y-1.5">
-            {journey.events.slice(0, 6).map((event) => (
-              <li key={event.id} className="flex gap-2 text-[12px] text-muted">
-                <span className="w-14 shrink-0 font-mono">{formatWhen(event.occurredAt).slice(0, 5)}</span>
+          <div className="mt-2 h-1 overflow-hidden bg-slate-100">
+            <div className="h-full bg-nav" style={{ width: `${Math.round(journey.journey.progress * 100)}%` }} />
+          </div>
+          <p className="mt-2 text-[11px] text-muted">Simulated movement. Route duration stays at dispatch.</p>
+          <ol className="mt-2 space-y-1">
+            {journey.events.slice(0, 4).map((event) => (
+              <li key={event.id} className="flex gap-2 text-[11px] text-muted">
+                <span className="w-10 shrink-0 font-mono">{formatWhen(event.occurredAt).slice(0, 5)}</span>
                 <span>{event.type.replaceAll("_", " ").toLowerCase()}</span>
               </li>
             ))}
           </ol>
-        </div>
+        </section>
       )}
     </div>
   );
@@ -855,32 +1006,7 @@ function Metric({
   );
 }
 
-function ScoreRing({ value }: { value: number }) {
-  const r = 16;
-  const c = 2 * Math.PI * r;
-  const offset = c - (value / 100) * c;
-  return (
-    <div className="relative h-14 w-14">
-      <svg viewBox="0 0 40 40" className="h-14 w-14 -rotate-90">
-        <circle cx="20" cy="20" r={r} fill="none" stroke="#e8eaed" strokeWidth="3.5" />
-        <circle
-          cx="20"
-          cy="20"
-          r={r}
-          fill="none"
-          stroke="#188038"
-          strokeWidth="3.5"
-          strokeDasharray={c}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className="absolute inset-0 grid place-items-center text-[13px] font-semibold">{value}</div>
-    </div>
-  );
-}
-
-function WhyCard({
+function WhyBlock({
   explanation,
   recommended,
   open,
@@ -896,54 +1022,44 @@ function WhyCard({
   const distance = factorScore(recommended?.breakdown?.distanceScore ?? explanation.components?.distanceScore);
   const eta = factorScore(recommended?.breakdown?.travelTimeScore ?? explanation.components?.travelTimeScore);
   return (
-    <motion.div
-      layout
-      className="absolute bottom-5 left-3 z-20 hidden w-[min(520px,calc(100%-280px))] border border-line bg-white p-3 md:block"
-    >
-      <button onClick={onToggle} className="flex w-full items-center justify-between text-left">
-        <span className="text-[15px] font-semibold">Why this route?</span>
-        <ChevronDown size={16} className={cn("text-muted transition-transform", open && "rotate-180")} />
+    <section className="px-4 py-3">
+      <button type="button" onClick={onToggle} className="flex w-full items-center justify-between text-left">
+        <span className="text-[11px] font-semibold tracking-wide text-muted">WHY THIS ROUTE?</span>
+        <ChevronDown size={14} className={cn("text-muted", open && "rotate-180")} />
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden"
-          >
-            <div className="mt-3 grid gap-4 sm:grid-cols-[1fr_1.1fr]">
-              <div className="text-[13px] leading-relaxed text-muted">
-                <p>{explanation.summary}</p>
-                {explanation.factors.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {explanation.factors.map((factor) => (
-                      <li key={factor}>— {factor}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div className="space-y-1.5">
-                <Bar label="ETA" value={eta} />
-                <Bar label="Traffic" value={traffic} />
-                <Bar label="Road status" value={road} />
-                <Bar label="Distance" value={distance} />
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+      {open && (
+        <div className="mt-2">
+          <p className="text-[12px] leading-relaxed text-ink">{explanation.summary}</p>
+          <div className="mt-2 space-y-1">
+            <Bar label="Travel time" value={eta} emphasize />
+            <Bar label="Traffic" value={traffic} />
+            <Bar label="Road status" value={road} />
+            <Bar label="Distance" value={distance} />
+          </div>
+          {emergencyPriorityLine(explanation)}
+        </div>
+      )}
+    </section>
   );
 }
 
-function Bar({ label, value }: { label: string; value: number }) {
+function emergencyPriorityLine(explanation: Explanation) {
+  const critical = explanation.emergencyPriority !== "STANDARD";
+  return (
+    <p className="mt-2 text-[11px] text-muted">
+      {critical
+        ? "Critical job — travel time has the highest weight (55%)."
+        : "Normal job — weights are more balanced."}
+    </p>
+  );
+}
+
+function Bar({ label, value, emphasize }: { label: string; value: number; emphasize?: boolean }) {
   return (
     <div className="grid grid-cols-[92px_1fr_48px] items-center gap-2 text-[12px]">
-      <span className="text-muted">{label}</span>
+      <span className={emphasize ? "font-semibold text-critical" : "text-muted"}>{label}</span>
       <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-clear" style={{ width: `${value}%` }} />
+        <div className={`h-full rounded-full ${emphasize ? "bg-critical" : "bg-clear"}`} style={{ width: `${value}%` }} />
       </div>
       <span className="text-right tabular text-muted">
         {value}

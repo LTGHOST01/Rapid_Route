@@ -50,16 +50,29 @@ const ROUTE_C: LatLng[] = [
   { lat: 19.051, lng: 72.8295 },
 ];
 
+/** Map a template path onto origin → destination. Endpoints stay exact. */
 function shiftPath(points: LatLng[], origin: LatLng, destination: LatLng): LatLng[] {
   const from = points[0];
   const to = points[points.length - 1];
+  const srcLat = to.lat - from.lat;
+  const srcLng = to.lng - from.lng;
+  const dstLat = destination.lat - origin.lat;
+  const dstLng = destination.lng - origin.lng;
+  const srcLen = Math.hypot(srcLat, srcLng) || 1;
+  const scale = (Math.hypot(dstLat, dstLng) || 1) / srcLen;
+  const last = points.length - 1;
+
   return points.map((point, index) => {
-    const t = index / (points.length - 1);
-    const baseShiftLat = origin.lat - from.lat + (destination.lat - to.lat) * t;
-    const baseShiftLng = origin.lng - from.lng + (destination.lng - to.lng) * t;
+    if (index === 0) return { lat: origin.lat, lng: origin.lng };
+    if (index === last) return { lat: destination.lat, lng: destination.lng };
+    const t = index / last;
+    const along =
+      ((point.lat - from.lat) * srcLat + (point.lng - from.lng) * srcLng) / (srcLen * srcLen);
+    const latOff = point.lat - from.lat - along * srcLat;
+    const lngOff = point.lng - from.lng - along * srcLng;
     return {
-      lat: Number((point.lat + baseShiftLat).toFixed(6)),
-      lng: Number((point.lng + baseShiftLng).toFixed(6)),
+      lat: Number((origin.lat + dstLat * t + latOff * scale).toFixed(6)),
+      lng: Number((origin.lng + dstLng * t + lngOff * scale).toFixed(6)),
     };
   });
 }

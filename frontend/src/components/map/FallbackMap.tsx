@@ -13,6 +13,7 @@ type Props = {
   vehiclePosition?: LatLng | null;
   movingVehicle?: { id: string; callSign: string; status: string; type?: string } | null;
   hospitals?: HospitalPlace[];
+  destinationKind?: "hospital" | "scene";
   roadConditions?: RoadCondition[];
   onMapClick?: (point: LatLng) => void;
 };
@@ -39,6 +40,7 @@ export function FallbackMap({
   selectedId,
   vehiclePosition,
   hospitals = [],
+  destinationKind = "hospital",
   roadConditions = [],
   onMapClick,
 }: Props) {
@@ -171,7 +173,7 @@ export function FallbackMap({
         )}
         {destination && (
           <image
-            href="/markers/hospital.svg"
+            href={destinationKind === "scene" ? "/markers/incident.svg" : "/markers/hospital.svg"}
             x={project(destination, bounds, width, height).x - 12}
             y={project(destination, bounds, width, height).y - 30}
             width="24"

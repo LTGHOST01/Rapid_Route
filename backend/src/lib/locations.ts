@@ -3,7 +3,7 @@ export type CatalogPlace = {
   label: string;
   lat: number;
   lng: number;
-  kind: "origin" | "hospital";
+  kind: "origin" | "hospital" | "fire";
   area?: string;
   facilityType?: string;
 };
@@ -55,7 +55,7 @@ export const MUMBAI_HOSPITALS: CatalogPlace[] = [
   },
   {
     id: "asian_heart",
-    label: "Asian Heart Institute",
+    label: "Asian Heart Institute, BKC",
     lat: 19.0655,
     lng: 72.8694,
     kind: "hospital",
@@ -154,6 +154,63 @@ export const MUMBAI_HOSPITALS: CatalogPlace[] = [
   },
 ];
 
+export const MUMBAI_FIRE_SCENES: CatalogPlace[] = [
+  {
+    id: "phoenix_parel",
+    label: "Phoenix Palladium, Lower Parel",
+    lat: 18.9944,
+    lng: 72.825,
+    kind: "fire",
+    area: "Lower Parel",
+    facilityType: "Mall fire",
+  },
+  {
+    id: "wadala_tt",
+    label: "Wadala Truck Terminal godown",
+    lat: 19.0168,
+    lng: 72.8755,
+    kind: "fire",
+    area: "Wadala",
+    facilityType: "Warehouse fire",
+  },
+  {
+    id: "crawford_market",
+    label: "Crawford Market",
+    lat: 18.9478,
+    lng: 72.8342,
+    kind: "fire",
+    area: "Fort",
+    facilityType: "Market fire",
+  },
+  {
+    id: "byculla_market",
+    label: "Byculla Market",
+    lat: 18.9752,
+    lng: 72.8335,
+    kind: "fire",
+    area: "Byculla",
+    facilityType: "Market fire",
+  },
+  {
+    id: "worli_highrise",
+    label: "Worli high-rise, Dr Annie Besant Rd",
+    lat: 19.0116,
+    lng: 72.818,
+    kind: "fire",
+    area: "Worli",
+    facilityType: "Building fire",
+  },
+  {
+    id: "andheri_midc",
+    label: "Andheri MIDC industrial shed",
+    lat: 19.1176,
+    lng: 72.8695,
+    kind: "fire",
+    area: "Andheri East",
+    facilityType: "Industrial fire",
+  },
+];
+
 export const DEMO_CORRIDORS = [
   {
     id: "SION_LINK",
@@ -166,10 +223,21 @@ export const DEMO_CORRIDORS = [
 ] as const;
 
 export const DETERMINISTIC_DEMO = {
-  origin: MUMBAI_ORIGINS[0],
+  origin: { ...MUMBAI_ORIGINS[0], label: "Dadar TT flyover" },
   destination: MUMBAI_HOSPITALS.find((h) => h.id === "kem")!,
   priority: "CRITICAL" as const,
   incidentType: "TRAUMA" as const,
-  notes: "Multi-vehicle collision at Dadar. Two critical patients for KEM.",
+  notes: "Two-wheeler vs BEST bus at Dadar TT. Patient to KEM trauma.",
   blockCorridorId: "SION_LINK",
+};
+
+export const FIRE_DEMO = {
+  origin: MUMBAI_FIRE_SCENES.find((s) => s.id === "phoenix_parel")!,
+  destination: {
+    ...MUMBAI_FIRE_SCENES.find((s) => s.id === "phoenix_parel")!,
+    label: "Fire scene",
+  },
+  priority: "CRITICAL" as const,
+  incidentType: "FIRE" as const,
+  notes: "Mall fire at Phoenix Palladium.",
 };

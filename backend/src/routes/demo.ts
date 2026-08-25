@@ -8,6 +8,7 @@ import {
   rerouteActiveJourneysAffectedBy,
 } from "../services/journeyService";
 import { blockedSliceEncodedPolyline, toNumber } from "../lib/geo";
+import { invalidateGoogleRoutesCache } from "../services/googleRoutesService";
 import { prisma } from "../lib/prisma";
 import { NotFoundError } from "../lib/errors";
 
@@ -51,6 +52,7 @@ demoRouter.post("/road-scenario", requireRole("ADMIN"), async (req, res) => {
     geometry,
     reportedById: req.user!.id,
   });
+  invalidateGoogleRoutesCache();
 
   if (body.journeyId) {
     const reroute = await evaluateReroute(body.journeyId, {

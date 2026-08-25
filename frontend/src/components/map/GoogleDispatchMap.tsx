@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Map, useMap } from "@vis.gl/react-google-maps";
-import { Minus, Plus, LocateFixed, Layers } from "lucide-react";
+import { Minus, Plus, LocateFixed, Layers, Volume2, VolumeX } from "lucide-react";
 import { decodePolyline, type LatLng } from "../../lib/geo";
-import { midpoint, routeColor } from "../../lib/mapStyles";
+import { LIGHT_DISPATCH_STYLES, midpoint, routeColor } from "../../lib/mapStyles";
 import { hospitalIconUrl, incidentIconUrl, vehicleIconUrl } from "../../lib/mapIcons";
 import type { Candidate, RoadCondition, Vehicle } from "../../types";
 import type { HospitalPlace } from "../../lib/geo";
@@ -15,10 +15,16 @@ type Props = {
   selectedId?: string | null;
   vehiclePosition?: LatLng | null;
   movingVehicle?: { id: string; callSign: string; status: string; type?: string } | null;
+  selectedVehicleId?: string | null;
   pinMode?: "origin" | "destination" | null;
   hospitals?: HospitalPlace[];
+  destinationKind?: "hospital" | "scene";
   roadConditions?: RoadCondition[];
   onMapClick?: (point: LatLng) => void;
+  onVehicleClick?: (vehicle: Vehicle) => void;
+  sirenMuted?: boolean;
+  onToggleSiren?: () => void;
+  sirenHint?: string;
 };
 
 function Overlay({
@@ -29,9 +35,13 @@ function Overlay({
   selectedId,
   vehiclePosition,
   movingVehicle,
+  selectedVehicleId,
   hospitals = [],
+  destinationKind = "hospital",
   roadConditions = [],
+  pinMode = null,
   onMapClick,
+  onVehicleClick,
 }: Props) {
   const map = useMap();
   const overlays = useRef<google.maps.OverlayView[]>([]);
@@ -93,33 +103,36 @@ function Overlay({
     const movingId = movingVehicle?.id;
 
     vehicles
-      .filter((vehicle) => vehicle.id !== movingId)
+      .filter((vehicle) => vehicle.id !== movingId && vehicle.status !== "INACTIVE")
       .forEach((vehicle) => {
+        const selected = vehicle.id === selectedVehicleId;
         const marker = new google.maps.Marker({
           map,
           position: { lat: vehicle.latitude, lng: vehicle.longitude },
           title: `${vehicle.callSign} · ${vehicle.status}`,
           label: {
             text: vehicle.callSign,
-            className: "rr-unit-label",
+            className: selected ? "rr-unit-label rr-unit-label-on" : "rr-unit-label",
             color: "#202124",
             fontSize: "10px",
             fontWeight: "600",
           },
           icon: {
             url: vehicleIconUrl(vehicle.type),
-            scaledSize: new google.maps.Size(40, 32),
-            anchor: new google.maps.Point(20, 28),
-            labelOrigin: new google.maps.Point(20, -4),
+            scaledSize: selected ? new google.maps.Size(46, 36) : new google.maps.Size(36, 28),
+            anchor: selected ? new google.maps.Point(23, 32) : new google.maps.Point(18, 26),
+            labelOrigin: new google.maps.Point(selected ? 23 : 18, -4),
           },
-          zIndex: 8,
+          zIndex: selected ? 16 : 8,
         });
         marker.addListener("click", () => {
+          onVehicleClick?.(vehicle);
           info.setContent(
-            `<div style="font:12px Inter,sans-serif;color:#202124;min-width:130px">
+            `<div style="font:12px Roboto,sans-serif;color:#1a1a1a;min-width:130px">
               <div style="font-weight:600">${vehicle.callSign}</div>
-              <div style="color:#5f6368;margin-top:2px">${vehicle.type} · ${vehicle.status}</div>
-              <div style="color:#5f6368">${vehicle.locationLabel ?? ""}</div>
+              <div style="color:#4b5563;margin-top:2px">${vehicle.type} · ${vehicle.status}</div>
+              <div style="color:#4b5563">${vehicle.locationLabel ?? ""}</div>
+              <div style="color:#1e4b8a;margin-top:4px">Siren preview</div>
             </div>`,
           );
           info.open({ map, anchor: marker });
@@ -127,12 +140,13 @@ function Overlay({
         markers.push(marker);
       });
 
+    const listingHospitals = pinMode === "destination";
     hospitals.forEach((hospital) => {
       const isDestination =
         destination &&
         Math.abs(hospital.lat - destination.lat) < 0.0008 &&
         Math.abs(hospital.lng - destination.lng) < 0.0008;
-      if (isDestination) return;
+      if (isDestination || !listingHospitals) return;
       const marker = new google.maps.Marker({
         map,
         position: { lat: hospital.lat, lng: hospital.lng },
@@ -162,7 +176,7 @@ function Overlay({
       const marker = new google.maps.Marker({
         map,
         position: origin,
-        title: origin.label ?? "Incident",
+        title: origin.label ?? (destinationKind === "scene" ? "Fire scene" : "Incident"),
         icon: {
           url: incidentIconUrl(),
           scaledSize: new google.maps.Size(28, 36),
@@ -173,7 +187,7 @@ function Overlay({
       marker.addListener("click", () => {
         info.setContent(
           `<div style="font:12px Inter,sans-serif;color:#202124">
-            <div style="font-weight:600">Incident</div>
+            <div style="font-weight:600">${destinationKind === "scene" ? "Fire scene" : "Incident"}</div>
             <div style="color:#5f6368;margin-top:2px">${origin.label ?? "Scene"}</div>
           </div>`,
         );
@@ -181,13 +195,19 @@ function Overlay({
       });
       markers.push(marker);
     }
-    if (destination) {
+    const destIsScene =
+      destinationKind === "scene" &&
+      origin &&
+      destination &&
+      Math.abs(origin.lat - destination.lat) < 0.0008 &&
+      Math.abs(origin.lng - destination.lng) < 0.0008;
+    if (destination && !destIsScene) {
       const marker = new google.maps.Marker({
         map,
         position: destination,
-        title: destination.label ?? "Hospital",
+        title: destination.label ?? (destinationKind === "scene" ? "Scene" : "Hospital"),
         icon: {
-          url: hospitalIconUrl("#188038"),
+          url: destinationKind === "scene" ? incidentIconUrl() : hospitalIconUrl("#188038"),
           scaledSize: new google.maps.Size(30, 38),
           anchor: new google.maps.Point(15, 36),
         },
@@ -196,8 +216,8 @@ function Overlay({
       marker.addListener("click", () => {
         info.setContent(
           `<div style="font:12px Inter,sans-serif;color:#202124">
-            <div style="font-weight:600">Destination</div>
-            <div style="color:#5f6368;margin-top:2px">${destination.label ?? "Hospital"}</div>
+            <div style="font-weight:600">${destinationKind === "scene" ? "Fire scene" : "Hospital"}</div>
+            <div style="color:#5f6368;margin-top:2px">${destination.label ?? ""}</div>
           </div>`,
         );
         info.open({ map, anchor: marker });
@@ -252,7 +272,7 @@ function Overlay({
       overlays.current = [];
       listeners.forEach((listener) => listener.remove());
     };
-  }, [map, decoded, vehicles, origin, destination, selectedId, vehiclePosition, movingVehicle, hospitals, roadConditions, onMapClick]);
+  }, [map, decoded, vehicles, origin, destination, destinationKind, selectedId, selectedVehicleId, vehiclePosition, movingVehicle, hospitals, roadConditions, pinMode, onMapClick, onVehicleClick]);
 
   const fitKey = useMemo(
     () =>
@@ -267,18 +287,31 @@ function Overlay({
   useEffect(() => {
     if (!map) return;
     const fit: LatLng[] = [];
-    decoded.forEach((d) => fit.push(...d.path));
-    if (origin) fit.push(origin);
-    if (destination) fit.push(destination);
-    if (fit.length === 0) {
-      vehicles.forEach((v) => fit.push({ lat: v.latitude, lng: v.longitude }));
-      hospitals.forEach((h) => fit.push({ lat: h.lat, lng: h.lng }));
+    if (origin && destination) {
+      fit.push(origin, destination);
+      const padLat = Math.max(0.008, Math.abs(origin.lat - destination.lat) * 0.9);
+      const padLng = Math.max(0.008, Math.abs(origin.lng - destination.lng) * 0.9);
+      const minLat = Math.min(origin.lat, destination.lat) - padLat;
+      const maxLat = Math.max(origin.lat, destination.lat) + padLat;
+      const minLng = Math.min(origin.lng, destination.lng) - padLng;
+      const maxLng = Math.max(origin.lng, destination.lng) + padLng;
+      decoded.forEach((row) => {
+        row.path.forEach((point) => {
+          if (point.lat >= minLat && point.lat <= maxLat && point.lng >= minLng && point.lng <= maxLng) {
+            fit.push(point);
+          }
+        });
+      });
+    } else if (origin) {
+      fit.push(origin, { lat: origin.lat + 0.012, lng: origin.lng + 0.012 }, { lat: origin.lat - 0.012, lng: origin.lng - 0.012 });
+    } else if (destination) {
+      fit.push(destination);
     }
     if (fit.length === 0) return;
     const bounds = new google.maps.LatLngBounds();
     fit.forEach((p) => bounds.extend(p));
-    map.fitBounds(bounds, 80);
-  }, [map, fitKey, decoded, origin, destination, vehicles, hospitals]);
+    map.fitBounds(bounds, 72);
+  }, [map, fitKey, decoded, origin, destination]);
 
   return null;
 }
@@ -343,7 +376,19 @@ function makeEtaOverlay(
   return new Label();
 }
 
-function MapHud({ showTraffic, onToggleTraffic }: { showTraffic: boolean; onToggleTraffic: () => void }) {
+function MapHud({
+  showTraffic,
+  onToggleTraffic,
+  sirenMuted,
+  onToggleSiren,
+  sirenHint,
+}: {
+  showTraffic: boolean;
+  onToggleTraffic: () => void;
+  sirenMuted?: boolean;
+  onToggleSiren?: () => void;
+  sirenHint?: string;
+}) {
   const map = useMap();
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
@@ -373,7 +418,29 @@ function MapHud({ showTraffic, onToggleTraffic }: { showTraffic: boolean; onTogg
           <LocateFixed size={15} />
         </button>
       </div>
-      <div className="pointer-events-auto absolute bottom-6 right-4 flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5 text-[13px] shadow-sm">
+      <div className="pointer-events-auto absolute bottom-6 right-4 flex flex-col items-end gap-2">
+      {onToggleSiren && (
+        <button
+          type="button"
+          onClick={onToggleSiren}
+          className="flex items-center gap-2 border border-line bg-white px-3 py-1.5 text-[13px]"
+          aria-label={sirenMuted ? "Unmute siren" : "Mute siren"}
+          aria-pressed={!sirenMuted}
+        >
+          {sirenMuted ? (
+            <VolumeX size={14} className="text-muted" />
+          ) : (
+            <Volume2 size={14} className="text-red-600" />
+          )}
+          <span className={sirenMuted ? "text-ink" : "font-medium text-red-700"}>
+            {sirenMuted ? "Unmute" : "Mute"}
+          </span>
+          {sirenHint && !sirenMuted && (
+            <span className="text-[11px] text-muted">· {sirenHint}</span>
+          )}
+        </button>
+      )}
+      <div className="flex items-center gap-2 border border-line bg-white px-3 py-1.5 text-[13px]">
         <Layers size={14} className="text-muted" />
         Traffic
         <button
@@ -386,6 +453,7 @@ function MapHud({ showTraffic, onToggleTraffic }: { showTraffic: boolean; onTogg
             className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${showTraffic ? "left-4" : "left-0.5"}`}
           />
         </button>
+      </div>
       </div>
     </div>
   );
@@ -403,14 +471,15 @@ function TrafficLayerOn({ enabled }: { enabled: boolean }) {
 }
 
 export function GoogleDispatchMap(props: Props) {
-  const center = props.origin ?? { lat: 19.076, lng: 72.8777 };
+  const center = props.origin ?? { lat: 19.05, lng: 72.84 };
   const [traffic, setTraffic] = useState(false);
 
   return (
     <div className="relative h-full w-full">
       <Map
         defaultCenter={center}
-        defaultZoom={12}
+        defaultZoom={13}
+        styles={LIGHT_DISPATCH_STYLES}
         disableDefaultUI
         clickableIcons={false}
         gestureHandling="greedy"
@@ -421,17 +490,27 @@ export function GoogleDispatchMap(props: Props) {
       >
         <Overlay {...props} />
         <TrafficLayerOn enabled={traffic} />
-        <MapHud showTraffic={traffic} onToggleTraffic={() => setTraffic((v) => !v)} />
+        <MapHud
+          showTraffic={traffic}
+          onToggleTraffic={() => setTraffic((v) => !v)}
+          sirenMuted={props.sirenMuted}
+          onToggleSiren={props.onToggleSiren}
+          sirenHint={props.sirenHint}
+        />
       </Map>
       {props.pinMode && (
         <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-full bg-ink px-3 py-1.5 text-[12px] text-white shadow">
-          {props.pinMode === "origin" ? "Click the map to set the incident" : "Click the map to set the hospital"}
+          {props.pinMode === "origin"
+            ? "Click the map to set the scene"
+            : "Click the map to set the hospital"}
         </div>
       )}
       <div className="pointer-events-none absolute bottom-6 left-3 z-20 flex flex-wrap gap-2 rounded-lg border border-line bg-white/95 px-2.5 py-1.5 text-[11px] text-muted shadow-sm">
         <span className="flex items-center gap-1"><img src={vehicleIconUrl("AMBULANCE")} alt="" className="h-4" /> Unit</span>
-        <span className="flex items-center gap-1"><img src={incidentIconUrl()} alt="" className="h-4" /> Incident</span>
-        <span className="flex items-center gap-1"><img src={hospitalIconUrl()} alt="" className="h-4" /> Hospital</span>
+        <span className="flex items-center gap-1"><img src={incidentIconUrl()} alt="" className="h-4" /> {props.destinationKind === "scene" ? "Fire scene" : "Incident"}</span>
+        {props.destinationKind !== "scene" && (
+          <span className="flex items-center gap-1"><img src={hospitalIconUrl()} alt="" className="h-4" /> Hospital</span>
+        )}
       </div>
     </div>
   );

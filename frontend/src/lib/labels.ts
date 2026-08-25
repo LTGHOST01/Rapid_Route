@@ -1,7 +1,7 @@
 import type { Priority, RoadStatus, TrafficLevel, VehicleStatus } from "../types";
 
 export function priorityLabel(priority: Priority) {
-  return priority === "CRITICAL" ? "Critical" : priority === "HIGH" ? "High" : "Standard";
+  return priority === "STANDARD" ? "NORMAL" : "CRITICAL — TIME FIRST";
 }
 
 export function trafficLabel(level: TrafficLevel) {

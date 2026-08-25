@@ -21,10 +21,13 @@ declare global {
 
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
-  if (!header?.startsWith("Bearer ")) {
+  const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+  const token = header?.startsWith("Bearer ")
+    ? header.slice("Bearer ".length)
+    : queryToken;
+  if (!token) {
     throw new UnauthorizedError();
   }
-  const token = header.slice("Bearer ".length);
   try {
     const payload = jwt.verify(token, env.JWT_SECRET) as {
       sub: string;

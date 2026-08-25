@@ -19,7 +19,15 @@ import { evalRouter } from "./routes/eval";
 export function createApp() {
   const app = express();
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      // This is an HTTP API on localhost. Helmet's defaults force HTTPS
+      // (HSTS + upgrade-insecure-requests) and the browser then fails /health.
+      contentSecurityPolicy: false,
+      strictTransportSecurity: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    }),
+  );
   app.use(
     cors({
       origin: corsOrigins,

@@ -94,7 +94,7 @@ export type HospitalPlace = {
 export const MUMBAI_HOSPITALS: HospitalPlace[] = [
   { id: "holy_family", label: "Holy Family Hospital", lat: 19.0548, lng: 72.8278, area: "Bandra West", facilityType: "Multispecialty hospital" },
   { id: "lilavati", label: "Lilavati Hospital", lat: 19.0514, lng: 72.8292, area: "Bandra West", facilityType: "Multispecialty hospital" },
-  { id: "asian_heart", label: "Asian Heart Institute", lat: 19.0655, lng: 72.8694, area: "Bandra East", facilityType: "Cardiac hospital" },
+  { id: "asian_heart", label: "Asian Heart Institute, BKC", lat: 19.0655, lng: 72.8694, area: "Bandra East", facilityType: "Cardiac hospital" },
   { id: "bhabha", label: "Bhabha Hospital", lat: 19.0602, lng: 72.832, area: "Bandra West", facilityType: "Municipal general hospital" },
   { id: "kem", label: "KEM Hospital", lat: 19.0022, lng: 72.8416, area: "Parel", facilityType: "Tertiary public hospital" },
   { id: "sion_hospital", label: "Sion Hospital (LTMMC)", lat: 19.0368, lng: 72.86, area: "Sion", facilityType: "Tertiary public hospital" },
@@ -113,15 +113,38 @@ export const DEMO_CORRIDORS = [
   { id: "EASTERN_CONNECTOR", label: "Eastern connector" },
 ];
 
+export const MUMBAI_FIRE_SCENES: HospitalPlace[] = [
+  { id: "phoenix_parel", label: "Phoenix Palladium, Lower Parel", lat: 18.9944, lng: 72.825, area: "Lower Parel", facilityType: "Mall fire" },
+  { id: "wadala_tt", label: "Wadala Truck Terminal godown", lat: 19.0168, lng: 72.8755, area: "Wadala", facilityType: "Warehouse fire" },
+  { id: "crawford_market", label: "Crawford Market", lat: 18.9478, lng: 72.8342, area: "Fort", facilityType: "Market fire" },
+  { id: "byculla_market", label: "Byculla Market", lat: 18.9752, lng: 72.8335, area: "Byculla", facilityType: "Market fire" },
+  { id: "worli_highrise", label: "Worli high-rise, Dr Annie Besant Rd", lat: 19.0116, lng: 72.818, area: "Worli", facilityType: "Building fire" },
+  { id: "andheri_midc", label: "Andheri MIDC industrial shed", lat: 19.1176, lng: 72.8695, area: "Andheri East", facilityType: "Industrial fire" },
+];
+
+/** Ambulance demo: crash at Dadar → KEM trauma. */
 export const MUMBAI_DEMO = {
   incidentType: "TRAUMA" as const,
   priority: "CRITICAL" as const,
-  originLabel: "Dadar",
+  originLabel: "Dadar TT flyover",
   originLat: 19.0178,
   originLng: 72.8478,
   destinationLabel: "KEM Hospital",
   destinationLat: 19.0022,
   destinationLng: 72.8416,
-  notes: "Multi-vehicle collision at Dadar. Two critical patients for KEM.",
+  notes: "Two-wheeler vs BEST bus at Dadar TT. Patient to KEM trauma.",
   blockCorridorId: "SION_LINK",
+};
+
+/** Fire demo: unit post → fire scene. Coords match the scene; label must not clone the origin. */
+export const MUMBAI_FIRE_DEMO = {
+  incidentType: "FIRE" as const,
+  priority: "CRITICAL" as const,
+  originLabel: "Phoenix Palladium, Lower Parel",
+  originLat: 18.9944,
+  originLng: 72.825,
+  destinationLabel: "Fire scene",
+  destinationLat: 18.9944,
+  destinationLng: 72.825,
+  notes: "Mall fire at Phoenix Palladium.",
 };

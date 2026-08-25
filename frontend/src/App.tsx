@@ -5,6 +5,7 @@ import { AppShell } from "./components/layout/AppShell";
 import { LoginPage } from "./pages/LoginPage";
 import { DispatchPage } from "./pages/DispatchPage";
 import { AdminPage } from "./pages/AdminPage";
+import { DemoPage } from "./pages/DemoPage";
 
 function Protected({ children }: { children: ReactNode }) {
   const { user, ready } = useAuth();
@@ -37,6 +38,8 @@ export default function App() {
         }
       >
         <Route path="/" element={<DispatchPage />} />
+        <Route path="/demo" element={<DemoPage />} />
+        <Route path="/demo/:scenarioId" element={<DemoPage />} />
         <Route
           path="/admin"
           element={

@@ -14,10 +14,16 @@ type Props = {
   selectedId?: string | null;
   vehiclePosition?: LatLng | null;
   movingVehicle?: { id: string; callSign: string; status: string; type?: string } | null;
+  selectedVehicleId?: string | null;
   hospitals?: HospitalPlace[];
+  destinationKind?: "hospital" | "scene";
   roadConditions?: RoadCondition[];
   onMapClick?: (point: LatLng) => void;
   pinMode?: "origin" | "destination" | null;
+  onVehicleClick?: (vehicle: Vehicle) => void;
+  sirenMuted?: boolean;
+  onToggleSiren?: () => void;
+  sirenHint?: string;
 };
 
 export function hasBrowserMapsKey() {

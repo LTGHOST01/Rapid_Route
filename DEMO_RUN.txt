@@ -1,0 +1,99 @@
+RAPIDROUTE — 6 MINUTE JUDGE DEMO
+================================
+Open this file on your second screen. Speak slowly.
+
+BEFORE THEY SIT DOWN
+  Browser: http://localhost:5173
+  Health:  http://localhost:5173/health
+  (Do not open :4000 in Chrome — it can lock the tab to HTTPS.)
+  If health says database down:
+    sudo pg_ctlcluster 16 main start
+  If a Calculate fails with "no available vehicles":
+    cd /home/ghost/projects/MOSSAD/backend
+    npx tsx scripts/reset-demo-fleet.ts
+
+LOGINS
+  Dispatcher  dispatcher@rapidroute.local   RapidRoute!dispatch
+  Admin       admin@rapidroute.local        RapidRoute!admin
+
+
+SAY THIS FIRST (15 sec)
+  "Google gives us real roads and times. RapidRoute is the dispatch
+   brain — it picks a free ambulance, scores the options, and throws
+   out a blocked road instead of sending someone into it."
+
+
+STEP 1 — INCIDENT (45 sec)     stay as DISPATCHER
+  New incident → Ambulance demo
+  (Dadar TT flyover crash → KEM Hospital. Trauma, Urgent.)
+  Create emergency.
+  "Ambulance: scene to hospital. Fire demo sends an engine
+   to Phoenix Palladium — not to a hospital."
+
+STEP 2 — UNIT (30 sec)
+  Show recommended ambulance (AMB-101 at Dadar).
+  Calculate routes.
+
+STEP 3 — WHY THIS ROUTE (90 sec)    THIS IS THE WIN
+  Point at 2 Google lines on the map.
+  "These geometries are Google. The score is ours."
+  Open Why this route.
+  Say: "Lowest penalty wins. Critical jobs weight time highest.
+        A blocked road is never scored — it is removed."
+
+STEP 4 — START JOURNEY (30 sec)
+  Start Journey. Marker moves.
+  "The van is a simulation. The 17 min is still Google's duration.
+   It does not collapse just because we animate."
+
+STEP 5 — BLOCK ROAD (90 sec)   LOGOUT → ADMIN
+  Admin → Evaluator → select this journey → Block current route.
+  "Admin only. Current path is blocked. We ask Google again from
+   where the vehicle is. If another path is clear, we take it."
+  Show the new route + event: rerouted.
+
+STEP 6 — FOUR SCENARIOS (90 sec)    click Demo in the top nav
+  These are NOT four live incidents. Do not create four emergencies.
+
+  Demo page → four cards. Click each. Wait for the map,
+  then click  Apply RapidRoute. Say:
+
+  1. Low traffic
+     "Three clear roads. Time is 55 percent of the score.
+      We take the fastest low-traffic one."
+  2. Heavy traffic
+     "The short road is jammed. We skip it and take a clearer one."
+  3. Road blockage
+     "Blocked roads are removed before scoring. We keep the next
+      clear road."
+  4. Destination unreachable
+     Read this sentence exactly:
+     "No suitable route available."
+
+  Each card is labelled EVALUATION SIMULATION.
+  Back to scenarios between cards.
+
+  If a judge asks "is this Google?":
+     "Maps draws the city. Routes API gives candidate paths.
+      Assignment, scoring, hard block, and the written reason — that is us."
+
+
+CLOSE (20 sec)
+  "We did not replace Google. We made Google usable in a control
+   room: vehicle, score, blockage, and a written reason."
+
+
+IF THEY ASK "ISN'T THIS GOOGLE MAPS?"
+  "Maps draws the city. Routes API gives candidate paths.
+   Assignment, scoring, hard block, audit log — that is us."
+
+IF GOOGLE FAILS
+  The banner will say DEMO SIMULATION. Say:
+  "Provider is down so we show labelled fixtures. Scoring is the same."
+
+DO NOT CLAIM
+  Live ambulance GPS, traffic-light control, city road feeds, AI/ML.
+
+
+ANSWERS FILE
+  /home/ghost/projects/MOSSAD/JUDGE_QA.txt

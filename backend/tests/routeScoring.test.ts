@@ -38,12 +38,30 @@ describe("RapidRoute scoring", () => {
     expect(a.roadPenalty).toBe(0);
     expect(a.score).toBe(27);
 
-    expect(b.etaPenalty).toBe(100);
+    expect(b.etaPenalty).toBe(33.33);
     expect(b.distancePenalty).toBe(0);
     expect(b.trafficPenalty).toBe(55);
-    expect(b.score).toBe(66);
+    expect(b.score).toBe(29.33);
 
     expect(pickWinner(scored)?.label).toBe("A");
+  });
+
+  it("does not give a lone slow route a free zero ETA penalty", () => {
+    const scored = scoreCandidates(
+      [
+        {
+          label: "A",
+          etaSeconds: 30 * 60,
+          distanceMeters: 15000,
+          trafficLevel: "LOW",
+          roadImpact: "CLEAR",
+          blocked: false,
+        },
+      ],
+      "CRITICAL",
+    );
+    expect(scored[0].etaPenalty).toBeGreaterThan(40);
+    expect(scored[0].distancePenalty).toBeGreaterThan(40);
   });
 
   it("excludes blocked candidates before scoring", () => {

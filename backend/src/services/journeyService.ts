@@ -234,12 +234,14 @@ export async function evaluateReroute(
 
   const computed = options.forceDemo
     ? { ok: false as const, reason: "Dispatcher requested DEMO SIMULATION" }
-    : await computeGoogleRoutes(origin, destination);
+    : await computeGoogleRoutes(origin, destination, { bypassCache: true, ensureAlternate: true });
 
   const usingDemo = !computed.ok;
   const rawRoutes = usingDemo ? buildDemoCandidates(origin, destination) : computed.routes;
   const conditions = await getActiveRoadConditions();
-  const tagged = rawRoutes.map((route) => ({ ...route, ...tagRouteWithConditions(route, conditions) }));
+  const tagged = await Promise.all(
+    rawRoutes.map(async (route) => ({ ...route, ...(await tagRouteWithConditions(route, conditions)) })),
+  );
   const scored = scoreCandidates(tagged, journey.emergency.priority);
   const winner = pickWinner(scored);
   const explanation = explainSelection(scored, winner, journey.emergency.priority);
@@ -305,7 +307,7 @@ export async function evaluateReroute(
   };
 
   // Re-tag the *current* remaining route against latest conditions.
-  const currentImpact = tagRouteWithConditions(
+  const currentImpact = await tagRouteWithConditions(
     {
       providerRouteIndex: journey.selection.candidate.providerRouteIndex,
       label: journey.selection.candidate.label,
@@ -458,7 +460,7 @@ export async function rerouteActiveJourneysAffectedBy(corridorId: string, status
     const corridorIds = (journey.selection.candidate.corridorIds as string[]) ?? [];
     const geometry = journey.selection.candidate.polyline;
     const conditions = await getActiveRoadConditions();
-    const impact = tagRouteWithConditions(
+    const impact = await tagRouteWithConditions(
       {
         providerRouteIndex: 0,
         label: journey.selection.candidate.label,

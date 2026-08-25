@@ -18,6 +18,7 @@ import {
 } from "../services/dispatchService";
 import { publicJourney } from "../lib/dto";
 import { paramId } from "../lib/params";
+import { rateLimit } from "../middleware/rateLimit";
 
 export const emergenciesRouter = Router();
 
@@ -43,7 +44,10 @@ emergenciesRouter.post("/:id/assign-vehicle", async (req, res) => {
   res.json({ emergency });
 });
 
-emergenciesRouter.post("/:id/routes", async (req, res) => {
+emergenciesRouter.post(
+  "/:id/routes",
+  rateLimit({ windowMs: 60_000, max: 12, prefix: "routes" }),
+  async (req, res) => {
   const body = calculateRoutesSchema.parse(req.body ?? {});
   const result = await calculateRoutes(paramId(req.params.id), body.forceDemo);
   res.status(201).json(result);

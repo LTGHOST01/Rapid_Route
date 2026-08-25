@@ -9,15 +9,27 @@ const MUMBAI_BOUNDS = {
 
 export type PickedPlace = LatLng & { label: string };
 
+const GENERIC = new Set(["hospital", "institute", "the", "and", "road", "street", "marg"]);
+
 export function filterCatalog<T extends { label: string; area?: string }>(
   items: T[],
   query: string,
 ): T[] {
   const q = query.trim().toLowerCase();
   if (!q) return items.slice(0, 8);
+  const tokens = q.split(/\s+/).filter((token) => token.length > 2 && !GENERIC.has(token));
   return items
-    .filter((item) => `${item.label} ${item.area ?? ""}`.toLowerCase().includes(q))
-    .slice(0, 8);
+    .map((item) => {
+      const hay = `${item.label} ${item.area ?? ""}`.toLowerCase();
+      if (hay.includes(q)) return { item, score: 2 };
+      if (tokens.length === 0) return { item, score: 0 };
+      const hits = tokens.filter((token) => hay.includes(token)).length;
+      return { item, score: hits / tokens.length };
+    })
+    .filter((row) => row.score >= 0.5)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map((row) => row.item);
 }
 
 export function geocodeAddress(query: string): Promise<PickedPlace | null> {

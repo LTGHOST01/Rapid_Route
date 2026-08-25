@@ -2,7 +2,8 @@ import type { Prisma, RoadStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { NotFoundError } from "../lib/errors";
 import { publicRoadCondition } from "../lib/dto";
-import { routeIntersectsGeometry, routeOverlapsBlocked, type LatLng } from "../lib/geo";
+import { routeIntersectsGeometry, type LatLng } from "../lib/geo";
+import { routesOverlapSpatial } from "../lib/spatial";
 import type { NormalizedRoute } from "./demoFallbackService";
 
 export type ConditionGeometry = {
@@ -103,7 +104,7 @@ export async function deleteRoadCondition(id: string) {
   await prisma.roadCondition.delete({ where: { id } });
 }
 
-export function tagRouteWithConditions(
+export async function tagRouteWithConditions(
   route: NormalizedRoute,
   conditions: Array<{
     id: string;
@@ -111,25 +112,25 @@ export function tagRouteWithConditions(
     corridorId: string;
     geometry: Prisma.JsonValue;
   }>,
-): {
+): Promise<{
   roadImpact: RoadStatus;
   blocked: boolean;
   roadConditionIds: string[];
-} {
-  const matching = conditions.filter((condition) => {
+}> {
+  const matching: typeof conditions = [];
+  for (const condition of conditions) {
     const liveBlock = condition.corridorId.startsWith("JOURNEY_");
     const geometry = (condition.geometry ?? {}) as ConditionGeometry;
+    let hits = false;
     if (liveBlock && geometry.polyline) {
-      return routeOverlapsBlocked(route.polyline, geometry.polyline);
+      hits = await routesOverlapSpatial(route.polyline, geometry.polyline);
+    } else if (route.corridorIds.length > 0) {
+      hits = route.corridorIds.includes(condition.corridorId);
+    } else if (geometry.polyline || geometry.points?.length) {
+      hits = routeIntersectsGeometry(route.polyline, geometry);
     }
-    if (route.corridorIds.length > 0) {
-      return route.corridorIds.includes(condition.corridorId);
-    }
-    if (geometry.polyline || geometry.points?.length) {
-      return routeIntersectsGeometry(route.polyline, geometry);
-    }
-    return false;
-  });
+    if (hits) matching.push(condition);
+  }
 
   const rank: Record<RoadStatus, number> = {
     CLEAR: 0,

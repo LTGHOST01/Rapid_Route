@@ -105,7 +105,7 @@ export function evaluateRecords(records: EvalRecord[]) {
   const candidates: ScoreInput[] = records.map((record, index) => {
     const roadImpact = normalizeRoad(record.road_status);
     return {
-      label: `${record.vehicle_id} · corridor ${index + 1}`,
+      label: `Route ${String.fromCharCode(65 + index)}`,
       etaSeconds: toSeconds(record.estimated_travel_time),
       distanceMeters: toMeters(record.road_distance),
       trafficLevel: normalizeTraffic(record.traffic_level),

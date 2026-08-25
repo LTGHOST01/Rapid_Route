@@ -1,0 +1,311 @@
+RAPIDROUTE — JUDGE Q&A (speak these, do not read like a script)
+RIH-PS-011 · Emergency Vehicle Dispatch & Routing
+================================================
+
+You do not need to sound like an engineer. Speak in this order:
+  1. What the problem is
+  2. What Google does vs what WE do
+  3. How a dispatch works
+  4. How we pick a route
+  5. What happens if a road is blocked
+
+
+------------------------------------------------
+0. ONE-LINE PITCH (say this first)
+------------------------------------------------
+
+"Google shows possible roads. RapidRoute is the dispatch brain:
+it picks an available ambulance, scores the routes, blocks unsafe
+roads, and writes down WHY it chose that route."
+
+
+------------------------------------------------
+1. WHAT DID WE BUILD?
+------------------------------------------------
+
+A web app for an emergency control room (Mumbai demo).
+
+Dispatcher:
+  - creates an incident (origin + hospital)
+  - sees recommended ambulance
+  - calculates live Google routes
+  - starts the journey
+  - sees why that route won
+
+Admin only:
+  - manages vehicles
+  - blocks / congests a road on a live journey
+  - runs the 4 official evaluator scenarios
+
+It is NOT Google Maps with a new skin.
+It is NOT claiming to invent a new GPS.
+
+
+------------------------------------------------
+2. HOW A LIVE DISPATCH WORKS (demo this)
+------------------------------------------------
+
+1. Login as dispatcher
+   dispatcher@rapidroute.local
+   RapidRoute!dispatch
+
+2. New incident → search origin (e.g. Dadar / Worli) and a hospital
+   (or click "Mumbai demo" for Dadar → KEM)
+
+3. Assign the suggested ambulance (closest compatible unit)
+
+4. Calculate routes
+   Backend calls Google Routes API.
+   Google returns 2–3 real paths with time, distance, traffic.
+
+5. RapidRoute scores them. Lowest penalty = recommended.
+   Screen shows "Why this route?"
+
+6. Start Journey
+   Marker moves along the polyline (simulation).
+   The Google trip time does NOT shrink just because we animate.
+   Arrival clock stays at dispatch unless we reroute.
+
+7. Logout. Login as admin
+   admin@rapidroute.local
+   RapidRoute!admin
+
+8. Admin → Evaluator → pick the active journey → Block current route
+   Current path is marked blocked.
+   RapidRoute asks Google again from the vehicle's current point.
+   If another path is clear, it is adopted.
+
+9. Admin → Evaluator → Run all 4 scenarios
+   All four should say Pass.
+
+
+------------------------------------------------
+3. GOOGLE VS RAPIDROUTE (they WILL ask this)
+------------------------------------------------
+
+Q: Isn't this just Google Maps?
+A: No. Two different jobs.
+
+   GOOGLE gives us:
+   - the map tiles you see
+   - real road geometry (the line on the map)
+   - travel time (ETA)
+   - alternative routes
+   - traffic-aware times when the API is configured
+
+   WE (RapidRoute) do:
+   - who is allowed to dispatch (login, roles)
+   - which ambulance is free and compatible
+   - score routes using emergency priority + traffic + our road reports
+   - HARD RULE: a blocked road is not scored, it is removed
+   - if every route is blocked: "No suitable route available"
+   - save the decision, then reroute only if needed
+   - show a written reason (Why this route?)
+
+   Analogy: Google is the road atlas. We are the control-room officer
+   who decides which ambulance and which path, and writes it in the log.
+
+
+Q: Is traffic real?
+A: Route times come from Google when keys work.
+   A "block this road" in the demo is OUR admin input (labelled
+   DEMO SIMULATION). We never call that a municipal live feed.
+
+
+Q: What if Google is down?
+A: We switch to DEMO SIMULATION — fake but labelled routes — so the
+   scoring and dispatch flow can still be shown. We never pretend
+   those are live Google.
+
+
+------------------------------------------------
+4. HOW SCORING WORKS (simple)
+------------------------------------------------
+
+Google sends 2–3 candidates. We do NOT invent new roads.
+
+For each candidate we compute a PENALTY (0 is best):
+  - ETA     — slower than the fastest option = higher penalty
+  - Distance
+  - Traffic — low / medium / high
+  - Road    — our reports: clear / congested / blocked
+
+Then:
+  score = weighted mix of those four
+  LOWEST score wins.
+
+Critical emergency cares more about TIME (weight 0.55).
+A normal job cares a bit more about distance and road status.
+
+What the judge sees as "RapidRoute score 92" is:
+  100 minus that penalty
+  (higher on screen = better looking quality)
+
+HARD RULE before any of this:
+  If the road is BLOCKED → candidate is ineligible. Score is not used.
+
+Reroute only if:
+  - current path became blocked, OR
+  - new path is clearly better (about 10 score points or 60 seconds)
+
+
+Example you can say:
+  "Two routes to KEM. Route A is 10 minutes but heavy traffic.
+   Route B is 11 minutes and clearer. For a critical patient we
+   still take A if it is not blocked, because time matters most.
+   If A is blocked, A is thrown out and B wins."
+
+
+------------------------------------------------
+5. THE 4 EVALUATOR SCENARIOS
+------------------------------------------------
+
+These use a fixed CSV/JSON schema (vehicle_id, traffic_level,
+road_status, distance, travel time…). Isolated tests, not live GPS.
+
+1. Low traffic
+   Several clear roads. We pick the fastest low-traffic one.
+
+2. Heavy traffic
+   Primary corridor is congested. We skip it and take a clearer one.
+
+3. Road blockage
+   First corridor is blocked → ineligible. We keep an alternative.
+
+4. Destination unreachable
+   Every corridor blocked.
+   Message: "No suitable route available. The destination cannot
+   currently be reached through the available routes."
+
+Admin → Evaluator → Run all 4 scenarios → all should Pass.
+
+
+------------------------------------------------
+6. WHO CAN DO WHAT
+------------------------------------------------
+
+Dispatcher
+  Create incident, assign unit, calculate, start journey.
+  CANNOT block roads. CANNOT open Admin.
+
+Admin
+  Vehicles, road reports, evaluator, "Block current route".
+
+Why: a road closure is an operations decision, not a dispatcher click.
+
+
+------------------------------------------------
+7. WHAT TECH WE USED (say it in plain words)
+------------------------------------------------
+
+LAYER                 WHAT IT IS                 WHAT IT DOES FOR US
+------                ----------                 -------------------
+React + TypeScript    The website (screen)       Buttons, forms, map panel
+Vite                  Dev/build tool             Runs the site on :5173
+Tailwind CSS          Styling                    Layout and colors
+Google Maps JS API    Browser map                Draws Mumbai + our pins
+Express + TypeScript  The server (brain)         Login, dispatch, scoring
+PostgreSQL            Database                   Saves incidents, routes
+Prisma                Talks to the database      Tables without raw SQL
+JWT                   Login token                Stays signed in
+Google Routes API     Server-only Google call    Real alternative routes
+Zod                   Input checks               Bad data is rejected
+
+Two Google keys (important if asked about security):
+  - Browser key  → only draws the map (frontend)
+  - Server key   → only asks for routes (backend)
+  Frontend NEVER calls Google Routes. Keys are NOT on GitHub.
+
+
+How the pieces talk:
+  Browser (React)  →  our API (Express :4000)  →  PostgreSQL
+                                    ↓
+                            Google Routes (if configured)
+
+The moving ambulance is a SIMULATION along Google's line.
+It is not a live GPS tracker in a real van.
+
+
+------------------------------------------------
+8. MORE LIKELY QUESTIONS
+------------------------------------------------
+
+Q: What is the innovation?
+A: An explainable dispatch layer: vehicle + route + local blockage
+   + a saved reason. Google does not do ambulance assignment or
+   "this corridor is closed for our operation."
+
+Q: Why Mumbai / these hospitals?
+A: Demo city we know. Origins and hospitals are searchable.
+   You can also drop a pin on the map.
+
+Q: Why does the van move if ETA stays the same?
+A: Movement is a demo animation. The official trip time is the
+   Google duration from dispatch. It only changes if we reroute.
+
+Q: Can you scale this?
+A: Yes in principle — it is a normal website + API + database.
+   For the hackathon we did not add extra servers or chat sockets.
+   The dispatcher screen refreshes on a short timer.
+
+Q: Did you train an AI model?
+A: No. Scoring is a published weighted formula, not a black box.
+   That is on purpose — a dispatcher must be able to audit it.
+
+Q: Open source / GitHub?
+A: https://github.com/LTGHOST01/Rapid_Route
+   (Do not put keys in the repo description.)
+
+Q: What would you add next?
+A: Real GPS from the vehicle, hospital bed status, and a live
+   municipal blockage feed. Scoring stays the same.
+
+
+------------------------------------------------
+9. ACCOUNTS (for the demo laptop)
+------------------------------------------------
+
+Dispatcher   dispatcher@rapidroute.local    RapidRoute!dispatch
+Admin        admin@rapidroute.local         RapidRoute!admin
+
+Backend:  http://localhost:4000/health
+Frontend: http://localhost:5173
+
+If health says Google is ready, Calculate routes uses live roads.
+If not, the UI will say DEMO SIMULATION.
+
+
+------------------------------------------------
+10. TOMORROW: DO YOU RE-UPLOAD TO GITHUB?
+------------------------------------------------
+
+YES — GitHub does not update by itself.
+
+After you change files:
+
+  cd /home/ghost/projects/MOSSAD
+  git add -A
+  git status                          # look: no .env files
+  git commit -m "describe the change"
+  git push origin main
+
+That updates https://github.com/LTGHOST01/Rapid_Route
+
+Notes:
+  - You only push NEW commits. You do not recreate the repo.
+  - If git asks for a password, use a GitHub token, not your
+    GitHub account password.
+  - Never commit backend/.env or frontend/.env (API keys).
+  - If you are unsure, run git status and check nothing named
+    .env is listed before you commit.
+
+
+------------------------------------------------
+11. 30-SECOND CLOSING
+------------------------------------------------
+
+"RapidRoute does not replace Google. It sits on top of Google
+Routes, picks a free ambulance, scores the real alternatives,
+throws out blocked roads, and stores the reason. If the road
+closes mid-journey, we recalculate from where the vehicle is
+and switch only when it actually helps."

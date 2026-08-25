@@ -2,8 +2,11 @@ import { Router } from "express";
 import { loginSchema, registerSchema } from "../validators";
 import { getUserById, login, register } from "../services/authService";
 import { requireAuth } from "../middleware/auth";
+import { rateLimit } from "../middleware/rateLimit";
 
 export const authRouter = Router();
+
+authRouter.use(rateLimit({ windowMs: 60_000, max: 30, prefix: "auth" }));
 
 authRouter.post("/login", async (req, res) => {
   const body = loginSchema.parse(req.body);

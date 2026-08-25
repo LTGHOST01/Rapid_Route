@@ -7,9 +7,10 @@ export type ScoringWeights = {
   road: number;
 };
 
+/** CRITICAL = TIME FIRST. HIGH shares those weights. STANDARD is NORMAL. */
 export const PRIORITY_WEIGHTS: Record<EmergencyPriority, ScoringWeights> = {
   CRITICAL: { eta: 0.55, distance: 0.1, traffic: 0.2, road: 0.15 },
-  HIGH: { eta: 0.45, distance: 0.15, traffic: 0.25, road: 0.15 },
+  HIGH: { eta: 0.55, distance: 0.1, traffic: 0.2, road: 0.15 },
   STANDARD: { eta: 0.35, distance: 0.2, traffic: 0.25, road: 0.2 },
 };
 
@@ -80,9 +81,23 @@ export type SelectionExplanation = {
   roadConditionIds: string[];
 };
 
-function minMaxPenalty(value: number, min: number, max: number): number {
-  if (max === min) return 0;
-  return ((value - min) / (max - min)) * 100;
+const ETA_BASELINE_SECONDS = 10 * 60;
+const DISTANCE_BASELINE_METERS = 5000;
+const ETA_SPAN_FLOOR_SECONDS = 180;
+const DISTANCE_SPAN_FLOOR_METERS = 500;
+
+function clampPenalty(value: number): number {
+  return Number(Math.max(0, Math.min(100, value)).toFixed(2));
+}
+
+function rangePenalty(value: number, min: number, max: number, floorSpan: number): number {
+  const span = Math.max(max - min, floorSpan);
+  return clampPenalty(((value - min) / span) * 100);
+}
+
+function baselinePenalty(value: number, baseline: number): number {
+  if (baseline <= 0) return 0;
+  return clampPenalty(((value - baseline) / baseline) * 100);
 }
 
 export function scoreCandidates<T extends ScoreInput>(
@@ -96,10 +111,15 @@ export function scoreCandidates<T extends ScoreInput>(
   const maxEta = Math.max(...etas);
   const minDistance = Math.min(...distances);
   const maxDistance = Math.max(...distances);
+  const lone = candidates.length === 1;
 
   return candidates.map((candidate) => {
-    const etaPenalty = minMaxPenalty(candidate.etaSeconds, minEta, maxEta);
-    const distancePenalty = minMaxPenalty(candidate.distanceMeters, minDistance, maxDistance);
+    const etaPenalty = lone
+      ? baselinePenalty(candidate.etaSeconds, ETA_BASELINE_SECONDS)
+      : rangePenalty(candidate.etaSeconds, minEta, maxEta, ETA_SPAN_FLOOR_SECONDS);
+    const distancePenalty = lone
+      ? baselinePenalty(candidate.distanceMeters, DISTANCE_BASELINE_METERS)
+      : rangePenalty(candidate.distanceMeters, minDistance, maxDistance, DISTANCE_SPAN_FLOOR_METERS);
     const trafficPenalty = TRAFFIC_PENALTY[candidate.trafficLevel];
     const roadPenalty = ROAD_PENALTY[candidate.roadImpact];
 

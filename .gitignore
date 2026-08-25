@@ -15,3 +15,16 @@ coverage/
 backend/prisma/dev.db
 *:Zone.Identifier
 refrence.png
+docs/~$*
+~$*
+admin-*.png
+judge-*.png
+demo-*.png
+dispatch-*.png
+fire-demo-scene.png
+siren-mute-button.png
+student-dispatch.png
+student-login.png
+map-icons-origin-search.png
+ambulance siren.mp3
+fire truck siren.mp3

@@ -8,8 +8,8 @@ Google Routes API supplies the candidates. RapidRoute makes an explainable opera
 
 For each candidate `r`, derive 0–100 penalties within the candidates returned for the current request:
 
-- `E(r)`: ETA penalty = `(eta - minimumEta) / (maximumEta - minimumEta) × 100`; 0 when all ETAs match.
-- `D(r)`: distance penalty using the same min/max formula.
+- `E(r)`: ETA penalty = `(eta - minimumEta) / max(maximumEta - minimumEta, 180s) × 100` when two or more candidates exist. A single candidate is scored against a 10-minute urban baseline so a long lone route is not a free zero.
+- `D(r)`: distance penalty using the same min/max formula with a 500 m floor; a single candidate uses a 5 km baseline.
 - `T(r)`: traffic penalty: low 20, medium 55, high 85; derive from Google traffic/advisory data when requested, otherwise label as unavailable and use 50.
 - `R(r)`: road-status penalty: clear 0, advisory 25, congested 60, blocked 100. It reflects active RapidRoute road reports that intersect/tag the candidate.
 
@@ -25,9 +25,9 @@ Emergency priority changes the *weights*, not traffic laws or Google’s route g
 
 | Priority | ETA | Distance | Traffic | Road status |
 |---|---:|---:|---:|---:|
-| CRITICAL | 0.55 | 0.10 | 0.20 | 0.15 |
-| HIGH | 0.45 | 0.15 | 0.25 | 0.15 |
-| STANDARD | 0.35 | 0.20 | 0.25 | 0.20 |
+| CRITICAL — TIME FIRST | 0.55 | 0.10 | 0.20 | 0.15 |
+| HIGH (same as CRITICAL) | 0.55 | 0.10 | 0.20 | 0.15 |
+| NORMAL (STANDARD) | 0.35 | 0.20 | 0.25 | 0.20 |
 
 Weights total 1.0. Critical events favor speed, but a non-blocked safety concern still affects the choice.
 
@@ -37,11 +37,11 @@ If an active `BLOCKED` RoadCondition intersects or is manually linked to a candi
 
 ## Example
 
-Critical incident. Candidate A: 600 s, 8 km, high traffic, clear. Candidate B: 660 s, 7 km, medium traffic, clear. Across these two candidates: A has `E=0,D=100,T=85,R=0`; B has `E=100,D=0,T=55,R=0`.
+Critical incident. Candidate A: 600 s, 8 km, high traffic, clear. Candidate B: 660 s, 7 km, medium traffic, clear. Span is floored at 180 s, so A has `E=0,D=100,T=85,R=0`; B has `E=33.33,D=0,T=55,R=0`.
 
 `A = .55(0)+.10(100)+.20(85)+.15(0)=27.0`
 
-`B = .55(100)+.10(0)+.20(55)+.15(0)=66.0`
+`B = .55(33.33)+.10(0)+.20(55)+.15(0)=29.33`
 
 A is recommended despite congestion because it is materially faster for a critical event. If A is blocked, it is excluded and B wins if eligible.
 

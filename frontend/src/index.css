@@ -49,8 +49,14 @@ textarea {
 .rr-unit-label {
   background: #fff;
   border: 1px solid #dadce0;
-  border-radius: 6px;
+  border-radius: 2px;
   padding: 1px 5px;
+}
+
+.rr-unit-label-on {
+  background: #1e4b8a;
+  border-color: #1e4b8a;
+  color: #fff !important;
 }
 
 ::selection {
