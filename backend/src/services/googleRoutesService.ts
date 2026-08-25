@@ -88,8 +88,9 @@ export async function computeGoogleRoutes(
 
   let routes = primary.routes;
   const tripKm = haversineKm(origin, destination);
-  if ((options.ensureAlternate ?? true) && routes.length < 2 && tripKm >= 5) {
+  if ((options.ensureAlternate ?? true) && routes.length < 2 && tripKm >= 6) {
     for (const via of DEMO_VIA_POINTS) {
+      if (!isAlongTrip(origin, destination, via)) continue;
       const extra = await requestGoogleRoutes(origin, destination, via);
       if (!extra.ok || extra.routes.length === 0) continue;
       const candidate = extra.routes[0];
@@ -121,6 +122,15 @@ function haversineKm(a: LatLng, b: LatLng) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
   return 6371 * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+function isAlongTrip(origin: LatLng, destination: LatLng, via: LatLng) {
+  const dLat = destination.lat - origin.lat;
+  const dLng = destination.lng - origin.lng;
+  const denom = dLat * dLat + dLng * dLng;
+  if (denom < 1e-10) return false;
+  const t = ((via.lat - origin.lat) * dLat + (via.lng - origin.lng) * dLng) / denom;
+  return t > 0.12 && t < 0.88;
 }
 
 function cacheKeyFor(origin: LatLng, destination: LatLng) {

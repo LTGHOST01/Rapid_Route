@@ -176,16 +176,24 @@ export async function calculateRoutes(emergencyId: string, forceDemo = false) {
   });
   if (!emergency) throw new NotFoundError("Emergency not found");
 
-  const origin: LatLng = emergency.vehicle
-    ? { lat: toNumber(emergency.vehicle.latitude), lng: toNumber(emergency.vehicle.longitude) }
-    : { lat: toNumber(emergency.originLat), lng: toNumber(emergency.originLng) };
+  const scene: LatLng = {
+    lat: toNumber(emergency.originLat),
+    lng: toNumber(emergency.originLng),
+  };
+  const toScene =
+    emergency.incidentType === "FIRE" || emergency.incidentType === "POLICE";
+  const origin: LatLng =
+    toScene && emergency.vehicle
+      ? { lat: toNumber(emergency.vehicle.latitude), lng: toNumber(emergency.vehicle.longitude) }
+      : scene;
   const destination: LatLng = {
     lat: toNumber(emergency.destinationLat),
     lng: toNumber(emergency.destinationLng),
   };
-  const originLabel = emergency.vehicle
-    ? `${emergency.vehicle.callSign} · ${emergency.vehicle.locationLabel}`
-    : emergency.originLabel;
+  const originLabel =
+    toScene && emergency.vehicle
+      ? `${emergency.vehicle.callSign} · ${emergency.vehicle.locationLabel}`
+      : emergency.originLabel;
 
   const computed = forceDemo
     ? { ok: false as const, reason: "Dispatcher requested DEMO SIMULATION" }

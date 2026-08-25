@@ -363,7 +363,7 @@ export function DispatchPage() {
     <MapsApiGate>
     <div className="flex h-full min-h-0 overflow-hidden bg-white">
       {leftOpen && (
-        <aside className="hidden h-full w-64 shrink-0 flex-col overflow-hidden border-r border-line bg-white lg:flex">
+        <aside className="hidden h-full w-64 min-w-64 shrink-0 flex-col overflow-hidden border-r border-line bg-white lg:flex">
           <IncidentList
             queue={queue}
             selectedId={selectedId}
@@ -568,20 +568,25 @@ function IncidentList({
   onHide?: () => void;
 }) {
   return (
-    <div className="flex h-full w-72 flex-col">
-      <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-[16px] font-semibold">Incidents</h2>
-          <span className="grid h-5 min-w-5 place-items-center bg-critical px-1.5 text-[11px] font-medium text-white">
+    <div className="flex h-full min-w-0 w-full flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-3">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h2 className="truncate text-[16px] font-semibold">Incidents</h2>
+          <span className="grid h-5 min-w-5 shrink-0 place-items-center bg-critical px-1.5 text-[11px] font-medium text-white">
             {queue.length}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="text-[13px] font-medium text-nav" onClick={onNew}>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" className="whitespace-nowrap text-[13px] font-medium text-nav" onClick={onNew}>
             New
           </button>
           {onHide && (
-            <button className="text-[13px] text-muted" onClick={onHide} aria-label="Hide incidents">
+            <button
+              type="button"
+              className="whitespace-nowrap text-[13px] text-muted"
+              onClick={onHide}
+              aria-label="Hide incidents"
+            >
               Hide
             </button>
           )}
